@@ -481,6 +481,9 @@ pub struct UnmanagedItem {
     pub path: String,
     /// 若是指向 ~/.agents 之外的链接，为其目标路径
     pub link_target: Option<String>,
+    pub description: String,
+    /// skill 行："独立" 或内嵌它的 plugin 名；plugin 行为空串
+    pub source: String,
 }
 
 /// 目录是否"看起来是 plugin"（有标准入口或标准子目录）
@@ -510,6 +513,17 @@ fn collect_unmanaged_in(
         if !ep.is_dir() {
             continue;
         }
+        // skill 必须含 SKILL.md 才算资产，顺带解析描述
+        let description = if kind == "skill" {
+            let md = ep.join("SKILL.md");
+            if !md.exists() {
+                continue;
+            }
+            let name0 = ep.file_name().unwrap_or_default().to_string_lossy().to_string();
+            scanner::parse_skill_md(&md, &name0).1
+        } else {
+            String::new()
+        };
         let name = ep.file_name().unwrap_or_default().to_string_lossy().to_string();
         match sync::read_link_target(&ep) {
             Ok(target) => {
@@ -526,6 +540,8 @@ fn collect_unmanaged_in(
                     name,
                     path: ep.to_string_lossy().to_string(),
                     link_target: Some(target.to_string_lossy().to_string()),
+                    description,
+                    source: if kind == "skill" { "独立".into() } else { String::new() },
                 });
             }
             Err(_) => {
@@ -538,8 +554,69 @@ fn collect_unmanaged_in(
                     name,
                     path: ep.to_string_lossy().to_string(),
                     link_target: None,
+                    description,
+                    source: if kind == "skill" { "独立".into() } else { String::new() },
                 });
             }
+        }
+    }
+}
+
+/// 补扫未纳管 plugin 内嵌的 skill（marketplace 插件里的技能此前完全不可见）
+fn collect_unmanaged_plugin_skills(
+    plugin_dir: &std::path::Path,
+    plugins_source: &std::path::Path,
+    skills_source: &std::path::Path,
+    agent_key: &str,
+    out: &mut Vec<UnmanagedItem>,
+) {
+    let entries = match std::fs::read_dir(plugin_dir) {
+        Ok(e) => e,
+        Err(_) => return,
+    };
+    for entry in entries.flatten() {
+        let plugin_path = entry.path();
+        if !plugin_path.is_dir() || !looks_like_plugin(&plugin_path) {
+            continue;
+        }
+        // 已纳管 plugin（指向 ~/.agents/plugins 的链接）跳过
+        if let Ok(t) = sync::read_link_target(&plugin_path) {
+            if t.starts_with(plugins_source) {
+                continue;
+            }
+        }
+        let plugin_name = plugin_path
+            .file_name()
+            .unwrap_or_default()
+            .to_string_lossy()
+            .to_string();
+        let skills_sub = plugin_path.join("skills");
+        let skill_entries = match std::fs::read_dir(&skills_sub) {
+            Ok(e) => e,
+            Err(_) => continue,
+        };
+        for se in skill_entries.flatten() {
+            let sp = se.path();
+            if !sp.is_dir() || !sp.join("SKILL.md").exists() {
+                continue;
+            }
+            // 内嵌 skill 自身若已链接到纳管源，跳过
+            if let Ok(t) = sync::read_link_target(&sp) {
+                if t.starts_with(skills_source) || t.starts_with(plugins_source) {
+                    continue;
+                }
+            }
+            let name = sp.file_name().unwrap_or_default().to_string_lossy().to_string();
+            let description = scanner::parse_skill_md(&sp.join("SKILL.md"), &name).1;
+            out.push(UnmanagedItem {
+                agent_key: agent_key.into(),
+                kind: "skill".into(),
+                name,
+                path: sp.to_string_lossy().to_string(),
+                link_target: None,
+                description,
+                source: plugin_name.clone(),
+            });
         }
     }
 }
@@ -563,16 +640,23 @@ pub fn get_unmanaged() -> Vec<UnmanagedItem> {
         // 插件目录：注册目录 + marketplace 兄弟目录（plugins-custom 的兄弟 plugins）
         if let Some(pd) = &agent.plugins_dir {
             let pd_expanded = expand_tilde(pd);
+            let mut plugin_dirs = Vec::new();
             if pd_expanded.exists() {
                 collect_unmanaged_in(&pd_expanded, &plugins_source, &agent.key, "plugin", true, &mut result);
+                plugin_dirs.push(pd_expanded.clone());
             }
             if pd.ends_with("plugins-custom") {
                 if let Some(parent) = pd_expanded.parent() {
                     let marketplace = parent.join("plugins");
                     if marketplace.exists() && marketplace != pd_expanded {
                         collect_unmanaged_in(&marketplace, &plugins_source, &agent.key, "plugin", true, &mut result);
+                        plugin_dirs.push(marketplace);
                     }
                 }
+            }
+            // 补扫这些目录下未纳管 plugin 内嵌的 skill
+            for pdir in plugin_dirs {
+                collect_unmanaged_plugin_skills(&pdir, &plugins_source, &skills_source, &agent.key, &mut result);
             }
         }
     }
@@ -581,6 +665,73 @@ pub fn get_unmanaged() -> Vec<UnmanagedItem> {
         (&a.agent_key, &a.kind, &a.name).cmp(&(&b.agent_key, &b.kind, &b.name))
     });
     result
+}
+
+// ---- 纳管：把未纳管资产收编进 ~/.agents 源 ----
+
+/// 纳管前置校验：origin 存在、未纳管、目标名可用
+fn adopt_preflight(origin: &std::path::Path, dest: &std::path::Path) -> Result<(), String> {
+    if !origin.exists() || !origin.is_dir() {
+        return Err(format!("目录不存在: {}", origin.display()));
+    }
+    if let Ok(t) = sync::read_link_target(origin) {
+        if t.starts_with(&expand_tilde("~/.agents")) {
+            return Err("该资产已纳管，无需重复操作".into());
+        }
+    }
+    if dest.exists() {
+        return Err(format!(
+            "纳管源中已存在同名资产「{}」，请先处理冲突",
+            dest.file_name().unwrap_or_default().to_string_lossy()
+        ));
+    }
+    Ok(())
+}
+
+/// 纳管技能：复制进 ~/.agents/skills；move 模式原位置替换为 junction（原目录先备份）
+#[tauri::command]
+pub fn adopt_skill(path: String, mode: String) -> Result<sync::SyncResult, String> {
+    let origin = std::path::PathBuf::from(&path);
+    if !origin.join("SKILL.md").exists() {
+        return Err("不是有效技能（缺少 SKILL.md）".into());
+    }
+    let name = origin
+        .file_name()
+        .ok_or_else(|| "无法解析技能名".to_string())?
+        .to_string_lossy()
+        .to_string();
+    let dest = expand_tilde("~/.agents/skills").join(&name);
+    adopt_preflight(&origin, &dest)?;
+    let backup_root = expand_tilde("~/.skillman/backups/adopted");
+    let res = sync::adopt(&origin, &dest, &mode, &backup_root);
+    if res.success {
+        Ok(res)
+    } else {
+        Err(res.error.unwrap_or_else(|| "纳管失败".into()))
+    }
+}
+
+/// 纳管插件：复制进 ~/.agents/plugins；move 模式原位置替换为 junction（原目录先备份）
+#[tauri::command]
+pub fn adopt_plugin(path: String, mode: String) -> Result<sync::SyncResult, String> {
+    let origin = std::path::PathBuf::from(&path);
+    if !looks_like_plugin(&origin) {
+        return Err("该目录不像插件（缺少 plugin.json / commands / skills 等入口）".into());
+    }
+    let name = origin
+        .file_name()
+        .ok_or_else(|| "无法解析插件名".to_string())?
+        .to_string_lossy()
+        .to_string();
+    let dest = expand_tilde("~/.agents/plugins").join(&name);
+    adopt_preflight(&origin, &dest)?;
+    let backup_root = expand_tilde("~/.skillman/backups/adopted");
+    let res = sync::adopt(&origin, &dest, &mode, &backup_root);
+    if res.success {
+        Ok(res)
+    } else {
+        Err(res.error.unwrap_or_else(|| "纳管失败".into()))
+    }
 }
 
 // ---- 体检：冲突 / 漂移 / 断链 ----

@@ -15,7 +15,8 @@ import { Toggle } from "../components/Toggle";
 import { EmptyState } from "../components/EmptyState";
 import { MatrixSkeleton } from "../components/Skeleton";
 import { SkillDrawer } from "../components/SkillDrawer";
-import { importSkill, getUnmanaged, getIssues } from "../api";
+import { ConfirmDialog } from "../components/ConfirmDialog";
+import { importSkill, getUnmanaged, getIssues, adoptSkill } from "../api";
 import { isTauri } from "../mock";
 import type { AgentStatus, SkillInfo, UnmanagedItem, Issue } from "../types";
 
@@ -32,6 +33,9 @@ export function SkillsPage({ onOpenSettings }: { onOpenSettings: () => void }) {
   const [unmanaged, setUnmanaged] = useState<UnmanagedItem[]>([]);
   const [issues, setIssues] = useState<Issue[]>([]);
   const [drawerSkill, setDrawerSkill] = useState<SkillInfo | null>(null);
+  const [adoptTarget, setAdoptTarget] = useState<UnmanagedItem | null>(null);
+  const [adoptMode, setAdoptMode] = useState<"move" | "copy">("move");
+  const [adopting, setAdopting] = useState(false);
 
   const loadSide = () => {
     getUnmanaged().then(setUnmanaged).catch(() => setUnmanaged([]));
@@ -155,6 +159,22 @@ export function SkillsPage({ onOpenSettings }: { onOpenSettings: () => void }) {
   const toggleHideEmpty = (v: boolean) => {
     setHideEmpty(v);
     localStorage.setItem("skillman.hideEmptyCols", v ? "1" : "0");
+  };
+
+  const confirmAdopt = async () => {
+    if (!adoptTarget) return;
+    setAdopting(true);
+    try {
+      await adoptSkill(adoptTarget.path, adoptMode);
+      push(`已纳管技能「${adoptTarget.name}」`, "success");
+      setAdoptTarget(null);
+      await reload();
+      loadSide();
+    } catch (e) {
+      push(`纳管失败: ${String(e)}`, "error");
+    } finally {
+      setAdopting(false);
+    }
   };
 
   if (loading) return <MatrixSkeleton rows={9} />;
@@ -322,13 +342,28 @@ export function SkillsPage({ onOpenSettings }: { onOpenSettings: () => void }) {
                   </div>
                   {!isCollapsed &&
                     items.map((u) => (
-                      <div className="m-row unmanaged" key={u.path} title={`${u.path}\n非 ~/.agents 管理，仅展示`}>
+                      <div className="m-row unmanaged" key={u.path} title={`${u.path}\n${u.description || "非 ~/.agents 管理，可纳管"}`}>
                         <div className="m-cell m-name m-sticky">
                           <div className="skill-name-text">{u.name}</div>
                           <div className="skill-id-text">{u.link_target ?? u.path}</div>
                         </div>
                         <div className="m-cell m-source">
-                          <span className="tag tag-local">本地</span>
+                          {u.source === "独立" ? (
+                            <span className="tag tag-local">本地</span>
+                          ) : (
+                            <span className="tag tag-local" title={`内嵌于插件 ${u.source}`}>插件内嵌</span>
+                          )}
+                          <button
+                            className="btn btn-ghost btn-adopt"
+                            title="收编进 ~/.agents/skills 纳管源"
+                            onClick={() => {
+                              setAdoptMode("move");
+                              setAdoptTarget(u);
+                            }}
+                          >
+                            <HardDriveDownload size={13} />
+                            纳管
+                          </button>
                         </div>
                         {visibleAgents.map((a) => (
                           <div className="m-cell m-toggle" key={a.key}>
@@ -345,6 +380,42 @@ export function SkillsPage({ onOpenSettings }: { onOpenSettings: () => void }) {
       )}
 
       <SkillDrawer skill={drawerSkill} onClose={() => setDrawerSkill(null)} />
+
+      <ConfirmDialog
+        open={!!adoptTarget}
+        title={`纳管技能「${adoptTarget?.name ?? ""}」`}
+        confirmText={adopting ? "纳管中…" : "纳管"}
+        onConfirm={confirmAdopt}
+        onCancel={() => !adopting && setAdoptTarget(null)}
+        message={
+          <>
+            <p>
+              将复制 <code>{adoptTarget?.path}</code> 到{" "}
+              <code>~/.agents/skills/{adoptTarget?.name}</code>，之后即可在矩阵中统一分发。
+            </p>
+            <div className="adopt-mode-group">
+              <label>
+                <input
+                  type="radio"
+                  name="adopt-mode"
+                  checked={adoptMode === "move"}
+                  onChange={() => setAdoptMode("move")}
+                />
+                <span>接管（推荐）：复制后原位置替换为链接，原目录自动备份</span>
+              </label>
+              <label>
+                <input
+                  type="radio"
+                  name="adopt-mode"
+                  checked={adoptMode === "copy"}
+                  onChange={() => setAdoptMode("copy")}
+                />
+                <span>仅复制：原位置保持不动（两份副本独立存在）</span>
+              </label>
+            </div>
+          </>
+        }
+      />
     </div>
   );
 }

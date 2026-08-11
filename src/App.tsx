@@ -7,6 +7,8 @@ import {
   RefreshCw,
   Waypoints,
   FolderDown,
+  Sun,
+  Moon,
 } from "lucide-react";
 import { ToastProvider, useToast } from "./components/Toast";
 import { DataProvider, useData } from "./store";
@@ -33,8 +35,22 @@ const NAV_ITEMS: { key: PageKey; label: string; icon: typeof Zap; desc: string }
 function Shell() {
   const [page, setPage] = useState<PageKey>("skills");
   const [dragging, setDragging] = useState(false);
+  const [theme, setTheme] = useState<"dark" | "light">(() =>
+    localStorage.getItem("skillman.theme") === "light" ? "light" : "dark"
+  );
   const { agents, reload } = useData();
   const { push } = useToast();
+
+  const toggleTheme = () => {
+    const next = theme === "dark" ? "light" : "dark";
+    setTheme(next);
+    localStorage.setItem("skillman.theme", next);
+    if (next === "light") {
+      document.documentElement.setAttribute("data-theme", "light");
+    } else {
+      document.documentElement.removeAttribute("data-theme");
+    }
+  };
 
   const active = NAV_ITEMS.find((n) => n.key === page)!;
   const detectedCount = agents.filter((a) => a.detected && a.key !== "agents").length;
@@ -139,6 +155,13 @@ function Shell() {
             {active.label}
             <span className="topbar-desc">{active.desc}</span>
           </div>
+          <button
+            className="btn btn-ghost"
+            onClick={toggleTheme}
+            title={theme === "dark" ? "切换到浅色主题" : "切换到深色主题"}
+          >
+            {theme === "dark" ? <Sun size={14} /> : <Moon size={14} />}
+          </button>
           <button className="btn btn-ghost" onClick={reload} title="重新扫描">
             <RefreshCw size={14} />
             刷新

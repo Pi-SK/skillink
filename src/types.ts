@@ -43,7 +43,7 @@ export interface SyncResult {
   error: string | null;
 }
 
-/** 未纳管资产（反向发现，只读） */
+/** 未纳管资产（反向发现） */
 export interface UnmanagedItem {
   agent_key: string;
   /** "skill" | "plugin" */
@@ -52,6 +52,10 @@ export interface UnmanagedItem {
   path: string;
   /** 若是链接但指向 ~/.agents 之外，则为目标路径 */
   link_target: string | null;
+  /** skill 的描述；plugin 为空串 */
+  description: string;
+  /** skill 行："独立" 或内嵌它的 plugin 名；plugin 行为空串 */
+  source: string;
 }
 
 /** 体检问题项 */

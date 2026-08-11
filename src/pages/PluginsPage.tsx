@@ -4,18 +4,24 @@ import { useData } from "../store";
 import { useToast } from "../components/Toast";
 import { EmptyState } from "../components/EmptyState";
 import { MatrixSkeleton } from "../components/Skeleton";
-import { getUnmanaged } from "../api";
+import { ConfirmDialog } from "../components/ConfirmDialog";
+import { getUnmanaged, adoptPlugin } from "../api";
 import type { AgentStatus, PluginInfo, UnmanagedItem } from "../types";
 
 /** 插件页：卡片网格，每张卡片内嵌各 Agent 的同步开关 */
 export function PluginsPage() {
-  const { agents, plugins, pluginMatrix, loading, toggling, togglePlugin } = useData();
+  const { agents, plugins, pluginMatrix, loading, toggling, togglePlugin, reload } = useData();
   const { push } = useToast();
   const [unmanaged, setUnmanaged] = useState<UnmanagedItem[]>([]);
+  const [adoptTarget, setAdoptTarget] = useState<UnmanagedItem | null>(null);
+  const [adoptMode, setAdoptMode] = useState<"move" | "copy">("move");
+  const [adopting, setAdopting] = useState(false);
 
-  useEffect(() => {
+  const loadUnmanaged = () => {
     getUnmanaged().then(setUnmanaged).catch(() => setUnmanaged([]));
-  }, []);
+  };
+
+  useEffect(loadUnmanaged, []);
 
   // 反向发现：各 Agent 目录下非 ~/.agents 链接来的插件（只读）
   const unmanagedPlugins = useMemo(
@@ -33,6 +39,22 @@ export function PluginsPage() {
     for (const c of pluginMatrix) m.set(`${c.plugin_name}::${c.agent_key}`, c.linked);
     return m;
   }, [pluginMatrix]);
+
+  const confirmAdopt = async () => {
+    if (!adoptTarget) return;
+    setAdopting(true);
+    try {
+      await adoptPlugin(adoptTarget.path, adoptMode);
+      push(`已纳管插件「${adoptTarget.name}」`, "success");
+      setAdoptTarget(null);
+      await reload();
+      loadUnmanaged();
+    } catch (e) {
+      push(`纳管失败: ${String(e)}`, "error");
+    } finally {
+      setAdopting(false);
+    }
+  };
 
   if (loading) return <MatrixSkeleton rows={5} />;
 
@@ -92,7 +114,7 @@ export function PluginsPage() {
             <span className="section-label">
               本地未纳管插件（{unmanagedPlugins.length}）
             </span>
-            <span className="unmanaged-hint">各 Agent 目录下非 ~/.agents 链接来的插件，仅展示</span>
+            <span className="unmanaged-hint">各 Agent 目录下非 ~/.agents 链接来的插件，可一键纳管</span>
           </div>
           <div className="unmanaged-rows">
             {unmanagedPlugins.map((u) => {
@@ -105,12 +127,59 @@ export function PluginsPage() {
                   <span className="unmanaged-agent">{agent?.display_name ?? u.agent_key}</span>
                   <div className="toolbar-spacer" />
                   <span className="unmanaged-path">{u.link_target ?? u.path}</span>
+                  <button
+                    className="btn btn-ghost btn-adopt"
+                    title="收编进 ~/.agents/plugins 纳管源"
+                    onClick={() => {
+                      setAdoptMode("move");
+                      setAdoptTarget(u);
+                    }}
+                  >
+                    <HardDriveDownload size={13} />
+                    纳管
+                  </button>
                 </div>
               );
             })}
           </div>
         </div>
       )}
+
+      <ConfirmDialog
+        open={!!adoptTarget}
+        title={`纳管插件「${adoptTarget?.name ?? ""}」`}
+        confirmText={adopting ? "纳管中…" : "纳管"}
+        onConfirm={confirmAdopt}
+        onCancel={() => !adopting && setAdoptTarget(null)}
+        message={
+          <>
+            <p>
+              将复制 <code>{adoptTarget?.path}</code> 到{" "}
+              <code>~/.agents/plugins/{adoptTarget?.name}</code>，纳管后可同步到各 Agent。
+            </p>
+            <div className="adopt-mode-group">
+              <label>
+                <input
+                  type="radio"
+                  name="adopt-mode"
+                  checked={adoptMode === "move"}
+                  onChange={() => setAdoptMode("move")}
+                />
+                <span>接管（推荐）：复制后原位置替换为链接，原目录自动备份</span>
+              </label>
+              <label>
+                <input
+                  type="radio"
+                  name="adopt-mode"
+                  checked={adoptMode === "copy"}
+                  onChange={() => setAdoptMode("copy")}
+                />
+                <span>仅复制：原位置保持不动（两份副本独立存在）</span>
+              </label>
+            </div>
+          </>
+        }
+      />
     </div>
   );
 }

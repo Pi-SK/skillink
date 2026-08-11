@@ -180,10 +180,11 @@ agent_skill_mana/
 - `get_issues()` 返回 conflict / drift / broken_link 三类，设置页健康检查面板展示。
 - 技能详情抽屉：`read_skill_md` / `open_skill_folder`；SKILL.md 用 `marked` + `DOMPurify.sanitize` 渲染。
 
-### 6.3 设计系统 v2
+### 6.3 设计系统 v3（深色 + 浅色双主题）
 
-- 左侧导航轨 + 右侧按需滑入抽屉（420px）；lucide-react 图标；自定义 pill 开关；toast 右下角堆叠；确认弹窗；骨架屏；空状态。
-- 状态色语义：绿=已链接/已检测，黄=漂移/警告/冲突，红=断链，灰=未安装/未纳管（虚线+tag-local）。
+- 默认深色（石墨黑 #101216 + 靛紫 #818cf8），`[data-theme="light"]` 覆盖全部 30+ 个颜色 token 为浅色系。
+- 色调切换：顶栏 Sun/Moon 按钮，localStorage "skillman.theme" 持久化；main.tsx 提前注入 data-theme 防首屏闪烁。
+- 全部硬编码 hex/rgba 已 token 化（--border-strong / --neutral-tint / --overlay / --knob / --purple 等）。
 
 ### 6.4 踩坑（v0.9 新增）
 
@@ -193,11 +194,31 @@ agent_skill_mana/
 - 浏览器 mock 模式下文档读写走 `mock.ts` 内存 Map，片段/备份/同步命令仅 Tauri 可用（UI 已做 isTauri 守卫）。
 - 路径一律经 `registry::expand_tilde`（"~/..."），不要拼接绝对路径；备份名/片段 id 均有严格校验防路径注入。
 
+### 6.5 完整扫描模型（v0.10）
+
+- **三层扫描矩阵**：① `~/.agents/skills/` 独立 skill → ② `~/.agents/plugins/*/skills/` 插件内嵌 skill → ③ Agent 本地目录下未纳管 skill/plugin（包括 marketplace 插件内嵌 skill）。
+- 未纳管 plugin 的 `skills/` 子目录中每个含 SKILL.md 的子目录均作为独立未纳管 skill 项展示，`source` 字段标记内嵌它的 plugin 名。
+- `npx skills add -g` 安装的 skill 落入 `~/.agents/skills`（已在纳管源覆盖范围内）；per-agent 安装（不加 -g）落入各 Agent 目录（反向发现覆盖）。
+- 项目级 `.agents/skills/` 暂不在扫描范围。
+
+### 6.6 纳管（adopt）机制（v0.10）
+
+- **纳管 = 反向发现的资产收编进 ~/.agents 源目录**：`adopt_skill(path, mode)` → 复制到 `~/.agents/skills/<name>`；`adopt_plugin(path, mode)` → 复制到 `~/.agents/plugins/<name>`。
+- 两种纳管模式：**copy** = 仅复制，原位置不动；**move**（推荐）= 复制后原位置替换为指向目标的 junction，真实目录先备份到 `~/.skillman/backups/adopted/`。
+- 前置校验：origin 已纳管（junction 指向 ~/.agents）→ 拒绝；dest 已存在同名 → 拒绝；skill 缺 SKILL.md / plugin 不满足 looks_like_plugin → 拒绝。
+- 前端未纳管行显示「纳管」按钮，点击弹出 ConfirmDialog 含 mode 单选；mock 模式调用 mockAdopt 从未纳管列表移除。
+
+### 6.7 平台策略（v0.10）
+
+- 当前仅支持 Windows（NTFS junction）；macOS/Linux symlink 适配标记为后续方向。
+
 ---
 
 ## 7. 后续方向
 
+- [x] 纳管机制（adopt_skill / adopt_plugin）
+- [x] 完整扫描模型（含未纳管插件内嵌 skill + npx skills 渠道）
+- [x] 深浅双主题（设计系统 v3）
 - [ ] VSIX Extension 同步支持（`.qoder/extensions/` 等）
 - [ ] Plugin marketplace 注册表自动发现（避免手动复制到 `~/.agents/plugins/`）
-- [ ] Skill 冲突检测（多个 Plugin 含同名 Skill 时提示）
 - [ ] macOS/Linux 的 symlink 支持（当前仅 NTFS junction）

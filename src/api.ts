@@ -17,7 +17,7 @@ import type {
   UnmanagedItem,
   Issue,
 } from "./types";
-import { isTauri, mock, mockToggleSkill, mockTogglePlugin } from "./mock";
+import { isTauri, mock, mockToggleSkill, mockTogglePlugin, mockAdopt } from "./mock";
 
 export async function getAgents(): Promise<AgentStatus[]> {
   if (!isTauri) return mock.getAgents();
@@ -166,11 +166,28 @@ export async function applySnippetSync(
   return invoke<ApplyResult[]>("apply_snippet_sync", { snippetId, targets, remove });
 }
 
-// ---- 反向发现 / 体检 / 技能详情 ----
+// ---- 反向发现 / 纳管 / 体检 / 技能详情 ----
 
 export async function getUnmanaged(): Promise<UnmanagedItem[]> {
   if (!isTauri) return mock.getUnmanaged();
   return invoke<UnmanagedItem[]>("get_unmanaged");
+}
+
+/** 纳管技能：mode "copy"=仅复制，"move"=复制后原位置换为 junction */
+export async function adoptSkill(path: string, mode: string): Promise<SyncResult> {
+  if (!isTauri) {
+    mockAdopt(path);
+    return { success: true, mode_used: mode, error: null };
+  }
+  return invoke<SyncResult>("adopt_skill", { path, mode });
+}
+
+export async function adoptPlugin(path: string, mode: string): Promise<SyncResult> {
+  if (!isTauri) {
+    mockAdopt(path);
+    return { success: true, mode_used: mode, error: null };
+  }
+  return invoke<SyncResult>("adopt_plugin", { path, mode });
 }
 
 export async function getIssues(): Promise<Issue[]> {

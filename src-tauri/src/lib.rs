@@ -33,8 +33,10 @@ pub fn run() {
             commands::delete_snippet,
             commands::preview_snippet_sync,
             commands::apply_snippet_sync,
-            // 反向发现 / 体检 / 详情
+            // 反向发现 / 纳管 / 体检 / 详情
             commands::get_unmanaged,
+            commands::adopt_skill,
+            commands::adopt_plugin,
             commands::get_issues,
             commands::read_skill_md,
             commands::open_skill_folder,

@@ -1,6 +1,6 @@
 /* ==========================================================================
-   Skill Mana 设计系统 v2
-   深海军蓝主题 · 在 v1 色调基础上演进（保留品牌色，补齐层级与组件规范）
+   Skill Mana 设计系统 v3
+   现代石墨黑 + 靛紫（默认深色）；[data-theme="light"] 提供浅色系
    ========================================================================== */
 
 /* ---------- 1. Reset & Tokens ---------- */
@@ -14,34 +14,52 @@
 }
 
 :root {
-  /* 层级面 */
-  --bg: #131524;
-  --bg-card: #181c30;
-  --bg-elevated: #1e2440;
-  --bg-hover: #232a4d;
-  --bg-input: #10131f;
+  /* 层级面（石墨黑） */
+  --bg: #101216;
+  --bg-card: #16181d;
+  --bg-elevated: #1d2026;
+  --bg-hover: #242832;
+  --bg-input: #0d0f12;
+  --group-hover: #1a1d24;
 
   /* 边框 */
-  --border: #2a3154;
-  --border-soft: #222845;
+  --border: #2b303b;
+  --border-soft: #22262e;
+  --border-strong: #3a4150;
 
   /* 文字 */
-  --text: #e8eaf2;
-  --text-dim: #8b93ad;
-  --text-faint: #5d6580;
+  --text: #ecedf1;
+  --text-dim: #9aa1b2;
+  --text-faint: #646c7e;
+  --text-on-accent: #0e1020;
+  --text-inverse: #ffffff;
 
-  /* 品牌与状态 */
-  --accent: #4fc3f7;
-  --accent-deep: #29b6f6;
-  --green: #66bb6a;
-  --red: #ef5350;
-  --yellow: #ffa726;
+  /* 品牌与状态（靛紫） */
+  --accent: #818cf8;
+  --accent-deep: #6366f1;
+  --green: #4ade80;
+  --red: #f87171;
+  --red-hover: #f98a87;
+  --yellow: #fbbf24;
+  --purple: #c084fc;
 
   /* 着色背景 */
-  --accent-tint: rgba(79, 195, 247, 0.13);
-  --green-tint: rgba(102, 187, 106, 0.14);
-  --yellow-tint: rgba(255, 167, 38, 0.14);
-  --red-tint: rgba(239, 83, 80, 0.14);
+  --accent-tint: rgba(129, 140, 248, 0.14);
+  --green-tint: rgba(74, 222, 128, 0.13);
+  --yellow-tint: rgba(251, 191, 36, 0.13);
+  --red-tint: rgba(248, 113, 113, 0.13);
+  --purple-tint: rgba(192, 132, 252, 0.15);
+  --neutral-tint: rgba(154, 161, 178, 0.12);
+  --accent-border: rgba(129, 140, 248, 0.35);
+  --yellow-border: rgba(251, 191, 36, 0.35);
+  --yellow-strong: rgba(251, 191, 36, 0.22);
+
+  /* 控件与遮罩 */
+  --switch-off: #2c3140;
+  --knob: #d5d9e2;
+  --knob-on: #0e1020;
+  --overlay: rgba(6, 8, 12, 0.6);
+  --skeleton-hi: #262b36;
 
   /* 圆角 */
   --radius-sm: 6px;
@@ -49,10 +67,56 @@
   --radius-lg: 12px;
 
   /* 阴影 */
-  --shadow-pop: 0 8px 28px rgba(0, 0, 0, 0.42);
+  --shadow-pop: 0 8px 28px rgba(0, 0, 0, 0.5);
 
   /* 动效 */
   --ease: cubic-bezier(0.3, 0.7, 0.4, 1);
+}
+
+/* 浅色系：仅覆盖颜色 token，结构与圆角继承 :root */
+[data-theme="light"] {
+  --bg: #f5f6f8;
+  --bg-card: #ffffff;
+  --bg-elevated: #eef0f3;
+  --bg-hover: #e6e9ee;
+  --bg-input: #ffffff;
+  --group-hover: #eceef2;
+
+  --border: #d8dce3;
+  --border-soft: #e3e6eb;
+  --border-strong: #c1c7d2;
+
+  --text: #1b1e27;
+  --text-dim: #5c6470;
+  --text-faint: #8a91a0;
+  --text-on-accent: #ffffff;
+  --text-inverse: #ffffff;
+
+  --accent: #6366f1;
+  --accent-deep: #4f46e5;
+  --green: #16a34a;
+  --red: #dc2626;
+  --red-hover: #ef4444;
+  --yellow: #d97706;
+  --purple: #9333ea;
+
+  --accent-tint: rgba(99, 102, 241, 0.1);
+  --green-tint: rgba(22, 163, 74, 0.1);
+  --yellow-tint: rgba(217, 119, 6, 0.12);
+  --red-tint: rgba(220, 38, 38, 0.09);
+  --purple-tint: rgba(147, 51, 234, 0.1);
+  --neutral-tint: rgba(27, 30, 39, 0.06);
+  --accent-border: rgba(99, 102, 241, 0.35);
+  --yellow-border: rgba(217, 119, 6, 0.35);
+  --yellow-strong: rgba(217, 119, 6, 0.16);
+
+  --switch-off: #cfd4dd;
+  --knob: #ffffff;
+  --knob-on: #ffffff;
+  --overlay: rgba(15, 18, 25, 0.35);
+  --skeleton-hi: #e7eaef;
+
+  --shadow-pop: 0 8px 28px rgba(15, 18, 25, 0.18);
 }
 
 html,
@@ -88,7 +152,7 @@ body {
   border-radius: 4px;
 }
 ::-webkit-scrollbar-thumb:hover {
-  background: #38406b;
+  background: var(--border-strong);
 }
 
 .btn {
@@ -109,7 +173,7 @@ body {
 }
 .btn:hover {
   background: var(--bg-hover);
-  border-color: #38406b;
+  border-color: var(--border-strong);
 }
 .btn:active {
   transform: scale(0.98);
@@ -122,7 +186,7 @@ body {
 .btn-primary {
   background: var(--accent);
   border-color: var(--accent);
-  color: #0c1220;
+  color: var(--text-on-accent);
   font-weight: 600;
 }
 .btn-primary:hover {
@@ -143,12 +207,12 @@ body {
 .btn-danger {
   background: var(--red);
   border-color: var(--red);
-  color: #fff;
+  color: var(--text-inverse);
   font-weight: 600;
 }
 .btn-danger:hover {
-  background: #f06b68;
-  border-color: #f06b68;
+  background: var(--red-hover);
+  border-color: var(--red-hover);
 }
 
 input[type="text"] {
@@ -417,13 +481,13 @@ input[type="text"]::placeholder {
   flex-shrink: 0;
   border: none;
   border-radius: 999px;
-  background: #2c3357;
+  background: var(--switch-off);
   cursor: pointer;
   padding: 0;
   transition: background 0.18s var(--ease);
 }
 .switch:hover:not(:disabled) {
-  background: #38406b;
+  background: var(--border-strong);
 }
 .switch.on {
   background: var(--accent);
@@ -443,12 +507,12 @@ input[type="text"]::placeholder {
   width: 13px;
   height: 13px;
   border-radius: 50%;
-  background: #cfd6e6;
+  background: var(--knob);
   transition: transform 0.18s var(--ease), background 0.18s var(--ease);
 }
 .switch.on .knob {
   transform: translateX(13px);
-  background: #0c1220;
+  background: var(--knob-on);
 }
 
 .switch.mini {
@@ -499,7 +563,7 @@ input[type="text"]::placeholder {
   color: var(--yellow);
 }
 .tag-neutral {
-  background: rgba(139, 147, 173, 0.13);
+  background: var(--neutral-tint);
   color: var(--text-dim);
 }
 .tag-linked {
@@ -511,7 +575,7 @@ input[type="text"]::placeholder {
   color: var(--yellow);
 }
 .tag-local {
-  background: rgba(139, 147, 173, 0.1);
+  background: var(--neutral-tint);
   color: var(--text-dim);
   border: 1px dashed var(--border);
 }
@@ -590,7 +654,7 @@ input[type="text"]::placeholder {
 .dialog-overlay {
   position: fixed;
   inset: 0;
-  background: rgba(8, 10, 18, 0.62);
+  background: var(--overlay);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -707,7 +771,7 @@ input[type="text"]::placeholder {
   background: linear-gradient(
     100deg,
     var(--bg-elevated) 40%,
-    #262d52 50%,
+    var(--skeleton-hi) 50%,
     var(--bg-elevated) 60%
   );
   background-size: 200% 100%;
@@ -858,7 +922,7 @@ input[type="text"]::placeholder {
   justify-content: center;
 }
 .agent-avatar.dim {
-  background: rgba(139, 147, 173, 0.12);
+  background: var(--neutral-tint);
   color: var(--text-faint);
 }
 
@@ -892,7 +956,7 @@ input[type="text"]::placeholder {
   transition: background 0.12s var(--ease);
 }
 .m-group:hover {
-  background: #171a2e;
+  background: var(--group-hover);
 }
 
 .group-chevron {
@@ -1099,7 +1163,7 @@ input[type="text"]::placeholder {
 .drop-veil {
   position: fixed;
   inset: 0;
-  background: rgba(8, 10, 18, 0.55);
+  background: var(--overlay);
   z-index: 120;
   display: flex;
   align-items: center;
@@ -1299,7 +1363,7 @@ input[type="text"]::placeholder {
 }
 .file-item.active {
   background: var(--accent-tint);
-  border-color: rgba(79, 195, 247, 0.25);
+  border-color: var(--accent-border);
 }
 
 .file-item-head {
@@ -1330,15 +1394,15 @@ input[type="text"]::placeholder {
   color: var(--accent);
 }
 .tag-role-persona {
-  background: rgba(186, 104, 200, 0.16);
-  color: #ce93d8;
+  background: var(--purple-tint);
+  color: var(--purple);
 }
 .tag-role-user {
   background: var(--green-tint);
   color: var(--green);
 }
 .tag-role-memory {
-  background: rgba(139, 147, 173, 0.13);
+  background: var(--neutral-tint);
   color: var(--text-dim);
 }
 
@@ -1489,7 +1553,7 @@ input[type="text"]::placeholder {
   display: none;
   position: fixed;
   inset: 0;
-  background: rgba(8, 10, 18, 0.62);
+  background: var(--overlay);
   z-index: 160;
   align-items: center;
   justify-content: center;
@@ -1616,7 +1680,7 @@ input[type="text"]::placeholder {
 }
 .snippet-item.active {
   background: var(--accent-tint);
-  border-color: rgba(79, 195, 247, 0.25);
+  border-color: var(--accent-border);
   color: var(--accent);
 }
 
@@ -1910,7 +1974,7 @@ input[type="text"]::placeholder {
 .drawer-overlay {
   position: fixed;
   inset: 0;
-  background: rgba(8, 10, 18, 0.5);
+  background: var(--overlay);
   opacity: 0;
   pointer-events: none;
   transition: opacity 0.2s var(--ease);
@@ -2052,7 +2116,7 @@ input[type="text"]::placeholder {
   gap: 5px;
   padding: 4px 11px;
   border-radius: 999px;
-  border: 1px solid rgba(255, 167, 38, 0.35);
+  border: 1px solid var(--yellow-border);
   background: var(--yellow-tint);
   color: var(--yellow);
   font-size: 11.5px;
@@ -2061,7 +2125,7 @@ input[type="text"]::placeholder {
   transition: background 0.15s var(--ease);
 }
 .issue-chip:hover {
-  background: rgba(255, 167, 38, 0.22);
+  background: var(--yellow-strong);
 }
 
 .issue-list {
@@ -2217,4 +2281,44 @@ input[type="text"]::placeholder {
   to {
     transform: rotate(360deg);
   }
+}
+
+/* ---------- 纳管 ---------- */
+
+.btn-adopt {
+  margin-left: auto;
+  padding: 3px 9px;
+  font-size: 11.5px;
+  color: var(--accent);
+  border-color: var(--accent-border);
+  flex-shrink: 0;
+}
+.btn-adopt:hover {
+  background: var(--accent-tint);
+  color: var(--accent-deep);
+}
+
+.adopt-mode-group {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-top: 10px;
+  padding: 10px 12px;
+  background: var(--bg-elevated);
+  border: 1px solid var(--border-soft);
+  border-radius: var(--radius);
+}
+.adopt-mode-group label {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  cursor: pointer;
+  font-size: 12px;
+  color: var(--text-dim);
+  line-height: 1.55;
+}
+.adopt-mode-group input[type="radio"] {
+  accent-color: var(--accent);
+  margin-top: 2px;
+  flex-shrink: 0;
 }

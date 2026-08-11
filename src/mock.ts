@@ -114,12 +114,13 @@ const snippets: Snippet[] = [
   { id: "writing-style", name: "学术写作风格", content: "- 流畅、专业、严谨\n- 有据可依、边界清晰\n- 贡献克制，警惕过度宣称" },
 ];
 
-const unmanagedItems: UnmanagedItem[] = [
-  { agent_key: "qwenworkcn", kind: "skill", name: "lark-im", path: "~/.qwenworkcn/skills/lark-im", link_target: null },
-  { agent_key: "qwenworkcn", kind: "skill", name: "lark-doc", path: "~/.qwenworkcn/skills/lark-doc", link_target: null },
-  { agent_key: "qwenworkcn", kind: "plugin", name: "consulting-delivery", path: "~/.qwenworkcn/plugins/consulting-delivery", link_target: null },
-  { agent_key: "claude", kind: "plugin", name: "claude-mem-inline", path: "~/.claude/plugins/data/claude-mem-inline", link_target: null },
-  { agent_key: "qoderworkcn", kind: "skill", name: "xlsx", path: "~/.qoderworkcn/skills/xlsx", link_target: null },
+let unmanagedItems: UnmanagedItem[] = [
+  { agent_key: "qwenworkcn", kind: "skill", name: "lark-im", path: "~/.qwenworkcn/skills/lark-im", link_target: null, description: "发送飞书 IM 消息", source: "独立" },
+  { agent_key: "qwenworkcn", kind: "skill", name: "lark-doc", path: "~/.qwenworkcn/skills/lark-doc", link_target: null, description: "创建与编辑飞书文档", source: "独立" },
+  { agent_key: "qwenworkcn", kind: "skill", name: "brief", path: "~/.qwenworkcn/plugins/consulting-delivery/skills/brief", link_target: null, description: "项目简报生成", source: "consulting-delivery" },
+  { agent_key: "qwenworkcn", kind: "plugin", name: "consulting-delivery", path: "~/.qwenworkcn/plugins/consulting-delivery", link_target: null, description: "咨询交付套件", source: "" },
+  { agent_key: "claude", kind: "plugin", name: "claude-mem-inline", path: "~/.claude/plugins/data/claude-mem-inline", link_target: null, description: "内联记忆插件", source: "" },
+  { agent_key: "qoderworkcn", kind: "skill", name: "xlsx", path: "~/.qoderworkcn/skills/xlsx", link_target: null, description: "Excel 表格处理", source: "独立" },
 ];
 
 const issues: Issue[] = [
@@ -145,6 +146,11 @@ export const mock = {
   getUnmanaged: () => delay(unmanagedItems),
   getIssues: () => delay(issues),
 };
+
+/** mock 纳管：从未纳管列表移除该项（模拟收编进 ~/.agents） */
+export function mockAdopt(path: string) {
+  unmanagedItems = unmanagedItems.filter((i) => i.path !== path);
+}
 
 /** 切换 mock 中的链接状态（模拟同步） */
 export function mockToggleSkill(agentKey: string, skillId: string, source: string, enable: boolean) {
