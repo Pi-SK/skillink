@@ -146,7 +146,7 @@ function Shell() {
         </header>
 
         <main className="content">
-          {page === "skills" && <SkillsPage />}
+          {page === "skills" && <SkillsPage onOpenSettings={() => setPage("settings")} />}
           {page === "plugins" && <PluginsPage />}
           {page === "docs" && (
             <Suspense fallback={<div className="docs-loading">加载编辑器…</div>}>

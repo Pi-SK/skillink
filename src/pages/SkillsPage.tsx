@@ -94,6 +94,20 @@ export function SkillsPage({ onOpenSettings }: { onOpenSettings: () => void }) {
     return result;
   }, [filtered]);
 
+  // 未纳管技能：按 agent 分组（反向发现，只读展示）
+  const unmanagedSkillGroups = useMemo(() => {
+    const q = search.trim().toLowerCase();
+    const byAgent = new Map<string, UnmanagedItem[]>();
+    for (const u of unmanaged) {
+      if (u.kind !== "skill") continue;
+      if (q && !u.name.toLowerCase().includes(q)) continue;
+      const arr = byAgent.get(u.agent_key) ?? [];
+      arr.push(u);
+      byAgent.set(u.agent_key, arr);
+    }
+    return [...byAgent.entries()].sort((a, b) => a[0].localeCompare(b[0]));
+  }, [unmanaged, search]);
+
   const cellMap = useMemo(() => {
     const m = new Map<string, boolean>();
     for (const c of matrix) m.set(`${c.agent_key}::${c.source}::${c.skill_id}`, c.linked);
@@ -284,9 +298,53 @@ export function SkillsPage({ onOpenSettings }: { onOpenSettings: () => void }) {
                 </div>
               );
             })}
+
+            {unmanagedSkillGroups.map(([agentKey, items]) => {
+              const agent = agents.find((a) => a.key === agentKey);
+              const gKey = `unmanaged::${agentKey}`;
+              const isCollapsed = collapsed.has(gKey);
+              return (
+                <div key={gKey}>
+                  <div
+                    className="m-group"
+                    onClick={() => toggleGroup(gKey)}
+                    title={isCollapsed ? "展开分组" : "折叠分组"}
+                  >
+                    <ChevronDown
+                      size={14}
+                      className={`group-chevron ${isCollapsed ? "collapsed" : ""}`}
+                    />
+                    <HardDriveDownload size={13} className="group-icon-local" />
+                    <span className="group-label">
+                      本地未纳管 · {agent?.display_name ?? agentKey}
+                    </span>
+                    <span className="group-count">{items.length}</span>
+                  </div>
+                  {!isCollapsed &&
+                    items.map((u) => (
+                      <div className="m-row unmanaged" key={u.path} title={`${u.path}\n非 ~/.agents 管理，仅展示`}>
+                        <div className="m-cell m-name m-sticky">
+                          <div className="skill-name-text">{u.name}</div>
+                          <div className="skill-id-text">{u.link_target ?? u.path}</div>
+                        </div>
+                        <div className="m-cell m-source">
+                          <span className="tag tag-local">本地</span>
+                        </div>
+                        {visibleAgents.map((a) => (
+                          <div className="m-cell m-toggle" key={a.key}>
+                            <span className="unmanaged-dash">—</span>
+                          </div>
+                        ))}
+                      </div>
+                    ))}
+                </div>
+              );
+            })}
           </div>
         </div>
       )}
+
+      <SkillDrawer skill={drawerSkill} onClose={() => setDrawerSkill(null)} />
     </div>
   );
 }

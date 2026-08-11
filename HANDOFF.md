@@ -141,25 +141,61 @@ failed to bundle project: `Couldn't find a .ico icon`
 ```
 agent_skill_mana/
 ├── src/                       # React 前端
-│   ├── App.tsx                # 主界面（Skills/Plugins 双 Tab）
-│   ├── App.css                # 样式（暗色主题，skill-name sticky）
-│   └── api.ts                 # Tauri invoke 封装
+│   ├── App.tsx                # 壳层：左侧导航轨 + 顶栏 + 拖拽导入
+│   ├── store.tsx              # DataProvider：快照 + 增量 toggle（避免全量重扫）
+│   ├── api.ts                 # Tauri invoke 封装（非 Tauri 自动降级 mock）
+│   ├── mock.ts                # 浏览器预览降级数据（isTauri 检测）
+│   ├── types.ts               # 与 Rust serde 结构一一对应
+│   ├── App.css                # 设计系统 v2（token + 组件规范）
+│   ├── components/            # Toast/ConfirmDialog/Drawer/Toggle/Skeleton/EmptyState/Markdown/SkillDrawer
+│   └── pages/                 # SkillsPage/PluginsPage/DocsPage(lazy)/SettingsPage/SnippetsTab
 ├── src-tauri/
 │   ├── src/
-│   │   ├── lib.rs             # 命令注册
-│   │   ├── commands.rs        # toggle_skill, toggle_plugin, get_matrix 等
+│   │   ├── lib.rs             # 命令注册（新命令需在此 + commands.rs 两处加）
+│   │   ├── commands.rs        # 全部 Tauri 命令（含反向发现/体检/技能详情）
 │   │   ├── registry.rs        # Agent 注册表（内置 + 用户自定义）
 │   │   ├── scanner.rs         # Skill/Plugin 扫描 + SKILL.md 解析
-│   │   └── sync.rs            # NTFS junction 创建/删除/检测
-│   ├── tauri.conf.json        # 构建配置（icon 需含 .ico）
+│   │   ├── sync.rs            # NTFS junction 创建/删除/检测（有单元测试）
+│   │   └── instructions.rs    # 指令文档+备份+片段+同步引擎（8 个单元测试）
+│   ├── tauri.conf.json        # 构建配置（icon 需含 .ico，已加 minWidth/minHeight）
 │   └── icons/                 # 应用图标
 ├── HANDOFF.md                 # 本文档
+├── NEXT_STEPS.md              # 交接清单
 └── package.json
 ```
 
 ---
 
-## 6. 后续方向
+## 6. v0.9 架构要点（新增）
+
+### 6.1 指令文档管理（instructions.rs）
+
+- 文档注册表在 `instructions.rs::doc_specs()`：claude→CLAUDE.md，codex→AGENTS.md，qwenworkcn/qoderworkcn→awareness/main/{AGENTS,SOUL,USER,MEMORY}.md（MEMORY 只读）。
+- 片段分发：`~/.skillman/snippets/<id>.md`（frontmatter name:），目标文档内写 `<!-- SKILLMAN:SYNC <id> -->...<!-- SKILLMAN:END -->` 受管块；写盘前自动备份到 `~/.skillman/backups/<agent>/`（保留 20 份）；删除片段移入 `~/.skillman/.trash/`。
+- CodeMirror 依赖重，DocsPage 用 `React.lazy` 按需加载，**不要静态 import**。
+
+### 6.2 反向发现 / 体检 / 技能详情
+
+- 未纳管判断：junction 目标不以 `~/.agents/skills` 或 `~/.agents/plugins` 开头即未纳管；plugins-custom 的兄弟目录 `plugins/`（marketplace）也扫描，需 `looks_like_plugin` 过滤。
+- `get_issues()` 返回 conflict / drift / broken_link 三类，设置页健康检查面板展示。
+- 技能详情抽屉：`read_skill_md` / `open_skill_folder`；SKILL.md 用 `marked` + `DOMPurify.sanitize` 渲染。
+
+### 6.3 设计系统 v2
+
+- 左侧导航轨 + 右侧按需滑入抽屉（420px）；lucide-react 图标；自定义 pill 开关；toast 右下角堆叠；确认弹窗；骨架屏；空状态。
+- 状态色语义：绿=已链接/已检测，黄=漂移/警告/冲突，红=断链，灰=未安装/未纳管（虚线+tag-local）。
+
+### 6.4 踩坑（v0.9 新增）
+
+- 前端命令参数：Tauri 2 自动把 camelCase 参数名转 snake_case，invoke 传 `agentKey` 等 camelCase 即可。
+- `SyncTarget` 需要 `Deserialize`（入参），其余返回结构只要 `Serialize`。
+- `marked` 配置 `{ gfm: true, breaks: true }`，渲染前必须 `DOMPurify.sanitize`。
+- 浏览器 mock 模式下文档读写走 `mock.ts` 内存 Map，片段/备份/同步命令仅 Tauri 可用（UI 已做 isTauri 守卫）。
+- 路径一律经 `registry::expand_tilde`（"~/..."），不要拼接绝对路径；备份名/片段 id 均有严格校验防路径注入。
+
+---
+
+## 7. 后续方向
 
 - [ ] VSIX Extension 同步支持（`.qoder/extensions/` 等）
 - [ ] Plugin marketplace 注册表自动发现（避免手动复制到 `~/.agents/plugins/`）

@@ -1,15 +1,27 @@
-import { useMemo } from "react";
-import { Package, Puzzle, Boxes } from "lucide-react";
+import { useEffect, useMemo, useState } from "react";
+import { Package, Puzzle, Boxes, HardDriveDownload } from "lucide-react";
 import { useData } from "../store";
 import { useToast } from "../components/Toast";
 import { EmptyState } from "../components/EmptyState";
 import { MatrixSkeleton } from "../components/Skeleton";
-import type { AgentStatus, PluginInfo } from "../types";
+import { getUnmanaged } from "../api";
+import type { AgentStatus, PluginInfo, UnmanagedItem } from "../types";
 
 /** 插件页：卡片网格，每张卡片内嵌各 Agent 的同步开关 */
 export function PluginsPage() {
   const { agents, plugins, pluginMatrix, loading, toggling, togglePlugin } = useData();
   const { push } = useToast();
+  const [unmanaged, setUnmanaged] = useState<UnmanagedItem[]>([]);
+
+  useEffect(() => {
+    getUnmanaged().then(setUnmanaged).catch(() => setUnmanaged([]));
+  }, []);
+
+  // 反向发现：各 Agent 目录下非 ~/.agents 链接来的插件（只读）
+  const unmanagedPlugins = useMemo(
+    () => unmanaged.filter((u) => u.kind === "plugin"),
+    [unmanaged]
+  );
 
   const pluginAgents = useMemo(
     () => agents.filter((a) => a.plugins_dir && a.key !== "agents"),
@@ -24,7 +36,7 @@ export function PluginsPage() {
 
   if (loading) return <MatrixSkeleton rows={5} />;
 
-  if (plugins.length === 0) {
+  if (plugins.length === 0 && unmanagedPlugins.length === 0) {
     return (
       <div className="page">
         <EmptyState
@@ -45,7 +57,14 @@ export function PluginsPage() {
         </span>
       </div>
 
-      <div className="plugin-grid">
+      {plugins.length === 0 ? (
+        <EmptyState
+          icon={Puzzle}
+          title="尚未纳管任何插件"
+          description="将插件文件夹放到 ~/.agents/plugins 目录后刷新，即可在此同步到各 Agent。"
+        />
+      ) : (
+        <div className="plugin-grid">
         {plugins.map((p) => (
           <PluginCard
             key={p.name}
@@ -63,7 +82,35 @@ export function PluginsPage() {
             }}
           />
         ))}
-      </div>
+        </div>
+      )}
+
+      {unmanagedPlugins.length > 0 && (
+        <div className="unmanaged-section">
+          <div className="unmanaged-head">
+            <HardDriveDownload size={13} className="group-icon-local" />
+            <span className="section-label">
+              本地未纳管插件（{unmanagedPlugins.length}）
+            </span>
+            <span className="unmanaged-hint">各 Agent 目录下非 ~/.agents 链接来的插件，仅展示</span>
+          </div>
+          <div className="unmanaged-rows">
+            {unmanagedPlugins.map((u) => {
+              const agent = agents.find((a) => a.key === u.agent_key);
+              return (
+                <div className="unmanaged-row" key={u.path} title={u.path}>
+                  <Puzzle size={14} className="group-icon-local" />
+                  <span className="unmanaged-name">{u.name}</span>
+                  <span className="tag tag-local">本地</span>
+                  <span className="unmanaged-agent">{agent?.display_name ?? u.agent_key}</span>
+                  <div className="toolbar-spacer" />
+                  <span className="unmanaged-path">{u.link_target ?? u.path}</span>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
     </div>
   );
 }
