@@ -1,0 +1,19 @@
+# Dependencies
+node_modules/
+
+# Build outputs
+dist/
+src-tauri/target/
+
+# Installers / binaries
+*.exe
+*.msi
+*.nsis
+*.dmg
+*.AppImage
+*.deb
+*.rpm
+
+# Logs & misc
+*.log
+.DS_Store
