@@ -1,0 +1,57 @@
+name: Build Windows installers
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: windows-latest
+    timeout-minutes: 60
+    env:
+      RUSTUP_TOOLCHAIN: 1.97.1
+
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24
+
+      - name: Set up pnpm
+        uses: pnpm/action-setup@v6
+        with:
+          version: 11.25.0
+
+      - name: Set up Rust
+        run: rustup toolchain install 1.97.1 --profile minimal --no-self-update
+
+      - name: Install frontend dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Run Rust tests
+        run: cargo test --locked --release --manifest-path src-tauri/Cargo.toml
+
+      - name: Build installers
+        run: pnpm tauri build
+
+      - name: Check installer outputs
+        shell: pwsh
+        run: |
+          $msi = Get-ChildItem -Path 'src-tauri/target/release/bundle/msi/*.msi'
+          $nsis = Get-ChildItem -Path 'src-tauri/target/release/bundle/nsis/*-setup.exe'
+          if (-not $msi -or -not $nsis) { throw 'Expected both MSI and NSIS installers.' }
+
+      - name: Upload installers
+        uses: actions/upload-artifact@v4
+        with:
+          name: skillink-windows
+          if-no-files-found: error
+          retention-days: 7
+          path: |
+            src-tauri/target/release/bundle/msi/*.msi
+            src-tauri/target/release/bundle/nsis/*-setup.exe
