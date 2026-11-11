@@ -1,10 +1,10 @@
 [package]
-name = "agent-skill-mana"
-version = "0.9.0"
+name = "agent-skillink"
+version = "1.2.8"
 edition = "2021"
 
 [lib]
-name = "agent_skill_mana_lib"
+name = "agent_skillink_lib"
 crate-type = ["staticlib", "cdylib", "rlib"]
 
 [build-dependencies]

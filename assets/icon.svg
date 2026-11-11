@@ -1,0 +1,53 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" viewBox="0 0 1024 1024">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#16181d"/>
+      <stop offset="100%" stop-color="#101216"/>
+    </linearGradient>
+  </defs>
+
+  <!-- background -->
+  <rect width="1024" height="1024" rx="220" fill="url(#bg)"/>
+
+  <!-- outer ring (ghost) -->
+  <circle cx="512" cy="460" r="280" fill="none" stroke="#2b303b" stroke-width="10" opacity="0.6"/>
+
+  <!-- central hexagon -->
+  <polygon
+    points="512,200 742,340 742,620 512,760 282,620 282,340"
+    fill="none"
+    stroke="#818cf8"
+    stroke-width="18"
+    stroke-linejoin="round"
+  />
+
+  <!-- inner diamond -->
+  <polygon
+    points="512,310 652,460 512,610 372,460"
+    fill="none"
+    stroke="#6366f1"
+    stroke-width="14"
+    stroke-linejoin="round"
+  />
+
+  <!-- four corner nodes -->
+  <circle cx="512" cy="210" r="24" fill="#818cf8"/>
+  <circle cx="512" cy="710" r="24" fill="#818cf8"/>
+  <circle cx="282" cy="460" r="24" fill="#818cf8"/>
+  <circle cx="742" cy="460" r="24" fill="#818cf8"/>
+
+  <!-- center node -->
+  <circle cx="512" cy="460" r="32" fill="#c084fc"/>
+
+  <!-- connection lines from center to corners -->
+  <line x1="512" y1="460" x2="512" y2="210" stroke="#6366f1" stroke-width="10" stroke-linecap="round"/>
+  <line x1="512" y1="460" x2="512" y2="710" stroke="#6366f1" stroke-width="10" stroke-linecap="round"/>
+  <line x1="512" y1="460" x2="282" y2="460" stroke="#6366f1" stroke-width="10" stroke-linecap="round"/>
+  <line x1="512" y1="460" x2="742" y2="460" stroke="#6366f1" stroke-width="10" stroke-linecap="round"/>
+
+  <!-- tiny sparkle dots along edges -->
+  <circle cx="440" cy="280" r="8" fill="#a5b4fc" opacity="0.7"/>
+  <circle cx="584" cy="280" r="8" fill="#a5b4fc" opacity="0.7"/>
+  <circle cx="440" cy="640" r="8" fill="#a5b4fc" opacity="0.7"/>
+  <circle cx="584" cy="640" r="8" fill="#a5b4fc" opacity="0.7"/>
+</svg>

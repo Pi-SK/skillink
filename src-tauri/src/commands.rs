@@ -4,6 +4,67 @@ use crate::scanner::{self, SkillInfo};
 use crate::sync;
 use serde::Serialize;
 
+/// 应用主题变化时切换 Windows 窗口材质（Mica 深/浅）。
+/// 非 Windows 平台为 no-op；theme 为 "light" 时用 MicaLight，否则 MicaDark。
+#[tauri::command]
+pub fn set_window_effect(window: tauri::WebviewWindow, theme: String) -> Result<(), String> {
+    #[cfg(target_os = "windows")]
+    {
+        use tauri::utils::config::WindowEffectsConfig;
+        use tauri::window::Effect;
+        let effect = if theme == "light" {
+            Effect::MicaLight
+        } else {
+            Effect::MicaDark
+        };
+        window
+            .set_effects(WindowEffectsConfig {
+                effects: vec![effect],
+                ..Default::default()
+            })
+            .map_err(|e| format!("切换窗口材质失败: {}", e))
+    }
+    #[cfg(not(target_os = "windows"))]
+    {
+        let _ = (window, theme);
+        Ok(())
+    }
+}
+
+// ---- 无边框窗口控制（decorations: false 后由前端顶栏提供按钮） ----
+
+/// 从顶栏任意空白处开始拖动窗口（需要前端绑定 mousedown）
+#[tauri::command]
+pub fn start_window_drag(window: tauri::WebviewWindow) -> Result<(), String> {
+    window
+        .start_dragging()
+        .map_err(|e| format!("无法开始拖动窗口: {}", e))
+}
+
+#[tauri::command]
+pub fn minimize_window(window: tauri::WebviewWindow) -> Result<(), String> {
+    window
+        .minimize()
+        .map_err(|e| format!("无法最小化窗口: {}", e))
+}
+
+#[tauri::command]
+pub fn toggle_maximize_window(window: tauri::WebviewWindow) -> Result<(), String> {
+    let is_max = window.is_maximized().unwrap_or(false);
+    if is_max {
+        window.unmaximize().map_err(|e| format!("无法还原窗口: {}", e))
+    } else {
+        window.maximize().map_err(|e| format!("无法最大化窗口: {}", e))
+    }
+}
+
+#[tauri::command]
+pub fn close_window(window: tauri::WebviewWindow) -> Result<(), String> {
+    window
+        .close()
+        .map_err(|e| format!("无法关闭窗口: {}", e))
+}
+
 // ---- 返回类型 ----
 
 #[derive(Debug, Serialize)]
@@ -31,6 +92,7 @@ pub fn get_agents() -> Vec<AgentStatus> {
                 skills_dir: a.skills_dir,
                 plugins_dir: a.plugins_dir,
                 sync_mode: a.sync_mode,
+                ignored: a.ignored,
             }
         })
         .collect()
@@ -72,14 +134,15 @@ pub fn get_matrix() -> Vec<MatrixCell> {
         }
     }
 
-    // plugin 内嵌 skill
+    // plugin 内嵌 skill（目标子目录为 {plugin}__{id} 避免与独立 skill 同名）
     for skill in &plugin_skills {
         for agent in &agents {
             let skill_source = plugins_source
                 .join(&skill.source)
                 .join("skills")
                 .join(&skill.id);
-            let target = expand_tilde(&agent.skills_dir).join(&skill.id);
+            let target_subdir = format!("{}__{}", skill.source, skill.id);
+            let target = expand_tilde(&agent.skills_dir).join(&target_subdir);
             let linked = if let Ok(resolved) = sync::read_link_target(&target) {
                 resolved == skill_source
             } else {
@@ -109,18 +172,28 @@ pub fn toggle_skill(
         .find(|a| a.key == agent_key)
         .ok_or_else(|| format!("未知 Agent: {}", agent_key))?;
 
-    // 根据 plugin_name 决定源路径
-    let source = if let Some(pn) = &plugin_name {
-        expand_tilde("~/.agents/plugins").join(pn).join("skills").join(&skill_id)
+    if agent.ignored {
+        return Err(format!("Agent「{}」已被忽略，无法同步", agent.display_name));
+    }
+
+    // 根据 plugin_name 决定源路径和目标子目录名（防止与独立 skill 同名冲突）
+    let (source, target_subdir) = if let Some(pn) = &plugin_name {
+        (
+            expand_tilde("~/.agents/plugins").join(pn).join("skills").join(&skill_id),
+            format!("{}__{}", pn, skill_id),
+        )
     } else {
-        expand_tilde("~/.agents/skills").join(&skill_id)
+        (
+            expand_tilde("~/.agents/skills").join(&skill_id),
+            skill_id.clone(),
+        )
     };
 
     if !source.exists() {
         return Err(format!("源 skill 不存在: {}", source.display()));
     }
 
-    let target = expand_tilde(&agent.skills_dir).join(&skill_id);
+    let target = expand_tilde(&agent.skills_dir).join(&target_subdir);
 
     if agent.sync_mode == "copy" {
         if enable {
@@ -186,12 +259,14 @@ pub fn import_skill(source_path: String) -> Result<SkillInfo, String> {
 
     copy_dir_recursive(&src, &dest).map_err(|e| format!("复制失败: {}", e))?;
 
-    let (name, description) = scanner::parse_skill_md(&dest.join("SKILL.md"), &id);
+    let (name, description, version, mtime_ms) = scanner::parse_skill_md(&dest.join("SKILL.md"), &id);
     Ok(SkillInfo {
         id,
         name,
         description,
         source: "独立".into(),
+        version,
+        mtime_ms,
     })
 }
 
@@ -207,6 +282,141 @@ pub fn open_agents_json() -> Result<(), String> {
     opener::open(&path).map_err(|e| format!("无法打开文件: {}", e))
 }
 
+/// 修改指定 Agent 的同步方式（"auto"=junction / "copy"=文件复制）
+#[tauri::command]
+pub fn set_agent_sync_mode(agent_key: String, sync_mode: String) -> Result<String, String> {
+    if sync_mode != "auto" && sync_mode != "copy" {
+        return Err(format!("无效的同步方式: {}（仅 auto / copy）", sync_mode));
+    }
+    let user_path = registry::user_agents_path();
+    if let Some(parent) = user_path.parent() {
+        std::fs::create_dir_all(parent).map_err(|e| format!("无法创建目录: {}", e))?;
+    }
+    let mut user_agents: Vec<serde_json::Value> = if user_path.exists() {
+        let content = std::fs::read_to_string(&user_path)
+            .map_err(|e| format!("无法读取 agents.json: {}", e))?;
+        serde_json::from_str(&content).unwrap_or_default()
+    } else {
+        Vec::new()
+    };
+    // 查找已有项或追加新项
+    if let Some(item) = user_agents.iter_mut().find(|v| v.get("key").and_then(|k| k.as_str()) == Some(&agent_key)) {
+        item["sync_mode"] = serde_json::Value::String(sync_mode.clone());
+    } else {
+        let builtin = registry::builtin_agents()
+            .into_iter()
+            .find(|a| a.key == agent_key)
+            .ok_or_else(|| format!("未知 Agent: {}", agent_key))?;
+        let mut item = serde_json::json!({
+            "key": builtin.key,
+            "display_name": builtin.display_name,
+            "skills_dir": builtin.skills_dir,
+            "sync_mode": sync_mode,
+        });
+        if let Some(pd) = builtin.plugins_dir {
+            item["plugins_dir"] = serde_json::Value::String(pd);
+        }
+        item["detect_dir"] = serde_json::Value::String(builtin.detect_dir);
+        user_agents.push(item);
+    }
+    let json = serde_json::to_string_pretty(&user_agents)
+        .map_err(|e| format!("序列化失败: {}", e))?;
+    std::fs::write(&user_path, &json).map_err(|e| format!("写入失败: {}", e))?;
+    Ok(sync_mode)
+}
+
+/// 忽略/取消忽略某个 Agent（忽略后不同步但可扫描）
+#[tauri::command]
+pub fn set_agent_ignored(agent_key: String, ignored: bool) -> Result<bool, String> {
+    let user_path = registry::user_agents_path();
+    if let Some(parent) = user_path.parent() {
+        std::fs::create_dir_all(parent).map_err(|e| format!("无法创建目录: {}", e))?;
+    }
+    let mut user_agents: Vec<serde_json::Value> = if user_path.exists() {
+        let content = std::fs::read_to_string(&user_path)
+            .map_err(|e| format!("无法读取 agents.json: {}", e))?;
+        serde_json::from_str(&content).unwrap_or_default()
+    } else {
+        Vec::new()
+    };
+    if let Some(item) = user_agents.iter_mut().find(|v| v.get("key").and_then(|k| k.as_str()) == Some(&agent_key)) {
+        item["ignored"] = serde_json::Value::Bool(ignored);
+    } else {
+        let builtin = registry::builtin_agents()
+            .into_iter()
+            .find(|a| a.key == agent_key)
+            .ok_or_else(|| format!("未知 Agent: {}", agent_key))?;
+        let mut item = serde_json::json!({
+            "key": builtin.key,
+            "display_name": builtin.display_name,
+            "skills_dir": builtin.skills_dir,
+            "ignored": ignored,
+        });
+        if let Some(pd) = builtin.plugins_dir {
+            item["plugins_dir"] = serde_json::Value::String(pd);
+        }
+        item["detect_dir"] = serde_json::Value::String(builtin.detect_dir);
+        user_agents.push(item);
+    }
+    let json = serde_json::to_string_pretty(&user_agents)
+        .map_err(|e| format!("序列化失败: {}", e))?;
+    std::fs::write(&user_path, &json).map_err(|e| format!("写入失败: {}", e))?;
+    Ok(ignored)
+}
+
+/// 保存/更新自定义 Agent 到 ~/.skillink/agents.json
+#[tauri::command]
+pub fn save_custom_agent(
+    key: String,
+    display_name: String,
+    skills_dir: String,
+    plugins_dir: Option<String>,
+    detect_dir: String,
+    sync_mode: String,
+) -> Result<String, String> {
+    if key.is_empty() || key.contains('/') || key.contains('\\') {
+        return Err("key 不能为空且不能包含路径分隔符".into());
+    }
+    if display_name.is_empty() {
+        return Err("display_name 不能为空".into());
+    }
+    if sync_mode != "auto" && sync_mode != "copy" {
+        return Err(format!("无效的同步方式: {}（仅 auto / copy）", sync_mode));
+    }
+    let user_path = registry::user_agents_path();
+    if let Some(parent) = user_path.parent() {
+        std::fs::create_dir_all(parent).map_err(|e| format!("无法创建目录: {}", e))?;
+    }
+    let mut user_agents: Vec<serde_json::Value> = if user_path.exists() {
+        let content = std::fs::read_to_string(&user_path)
+            .map_err(|e| format!("无法读取 agents.json: {}", e))?;
+        serde_json::from_str(&content).unwrap_or_default()
+    } else {
+        Vec::new()
+    };
+    let mut item = serde_json::json!({
+        "key": key,
+        "display_name": display_name,
+        "skills_dir": skills_dir,
+        "detect_dir": detect_dir,
+        "sync_mode": sync_mode,
+    });
+    if let Some(pd) = &plugins_dir {
+        if !pd.is_empty() {
+            item["plugins_dir"] = serde_json::Value::String(pd.clone());
+        }
+    }
+    if let Some(existing) = user_agents.iter_mut().find(|v| v.get("key").and_then(|k| k.as_str()) == Some(&key)) {
+        *existing = item;
+    } else {
+        user_agents.push(item);
+    }
+    let json = serde_json::to_string_pretty(&user_agents)
+        .map_err(|e| format!("序列化失败: {}", e))?;
+    std::fs::write(&user_path, &json).map_err(|e| format!("写入失败: {}", e))?;
+    Ok(key)
+}
+
 // ---- plugin 命令 ----
 
 #[derive(Debug, Serialize)]
@@ -215,21 +425,46 @@ pub struct PluginInfo {
     pub has_skills: bool,
     pub skill_count: usize,
     pub description: String,
+    /// plugin.json 中的版本号，缺省为空串
+    pub version: String,
+    /// plugin.json（或插件目录）修改时间 unix 毫秒
+    pub mtime_ms: u64,
 }
 
-/// 从 plugin.json（.claude-plugin/ 或 .qoder-plugin/）解析描述
-fn parse_plugin_description(plugin_path: &std::path::Path) -> String {
+/// 从 plugin.json（.claude-plugin/ 或 .qoder-plugin/）解析 (描述, 版本, manifest 修改时间毫秒)。
+/// manifest 不存在时 mtime 回退为插件目录本身的修改时间。
+fn parse_plugin_meta(plugin_path: &std::path::Path) -> (String, String, u64) {
+    let dir_mtime = std::fs::metadata(plugin_path)
+        .ok()
+        .and_then(|m| m.modified().ok())
+        .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
+        .map(|d| d.as_millis() as u64)
+        .unwrap_or(0);
     for marker in [".claude-plugin", ".qoder-plugin"] {
         let manifest = plugin_path.join(marker).join("plugin.json");
+        if !manifest.exists() {
+            continue;
+        }
+        let mtime_ms = std::fs::metadata(&manifest)
+            .ok()
+            .and_then(|m| m.modified().ok())
+            .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
+            .map(|d| d.as_millis() as u64)
+            .unwrap_or(dir_mtime);
+        let (mut description, mut version) = (String::new(), String::new());
         if let Ok(content) = std::fs::read_to_string(&manifest) {
             if let Ok(json) = serde_json::from_str::<serde_json::Value>(&content) {
                 if let Some(desc) = json.get("description").and_then(|d| d.as_str()) {
-                    return desc.to_string();
+                    description = desc.to_string();
+                }
+                if let Some(v) = json.get("version").and_then(|d| d.as_str()) {
+                    version = v.to_string();
                 }
             }
         }
+        return (description, version, mtime_ms);
     }
-    String::new()
+    (String::new(), String::new(), dir_mtime)
 }
 
 /// 列出 ~/.agents/plugins 下的所有 plugin
@@ -260,12 +495,76 @@ pub fn get_plugins() -> Vec<PluginInfo> {
             } else {
                 0
             };
-            let description = parse_plugin_description(&path);
-            plugins.push(PluginInfo { name, has_skills, skill_count, description });
+            let (description, version, mtime_ms) = parse_plugin_meta(&path);
+            plugins.push(PluginInfo {
+                name,
+                has_skills,
+                skill_count,
+                description,
+                version,
+                mtime_ms,
+            });
         }
     }
     plugins.sort_by(|a, b| a.name.cmp(&b.name));
     plugins
+}
+
+/// 插件详情：版本、描述与内嵌技能清单（供详情抽屉展示）
+#[derive(Debug, Serialize)]
+pub struct PluginDetail {
+    pub name: String,
+    pub version: String,
+    pub description: String,
+    pub mtime_ms: u64,
+    pub skills: Vec<PluginSkillBrief>,
+}
+
+#[derive(Debug, Serialize)]
+pub struct PluginSkillBrief {
+    pub id: String,
+    pub name: String,
+    pub description: String,
+    pub version: String,
+}
+
+#[tauri::command]
+pub fn get_plugin_detail(plugin_name: String) -> Result<PluginDetail, String> {
+    validate_component(&plugin_name)?;
+    let path = expand_tilde("~/.agents/plugins").join(&plugin_name);
+    if !path.exists() || !path.is_dir() {
+        return Err(format!("插件不存在: {}", plugin_name));
+    }
+    let (description, version, mtime_ms) = parse_plugin_meta(&path);
+    let mut skills = Vec::new();
+    let skills_dir = path.join("skills");
+    if let Ok(entries) = std::fs::read_dir(&skills_dir) {
+        for entry in entries.flatten() {
+            let sp = entry.path();
+            if !sp.is_dir() {
+                continue;
+            }
+            let md = sp.join("SKILL.md");
+            if !md.exists() {
+                continue;
+            }
+            let id = sp.file_name().unwrap_or_default().to_string_lossy().to_string();
+            let (name, description, version, _) = scanner::parse_skill_md(&md, &id);
+            skills.push(PluginSkillBrief { id, name, description, version });
+        }
+    }
+    skills.sort_by(|a, b| a.id.cmp(&b.id));
+    Ok(PluginDetail { name: plugin_name, version, description, mtime_ms, skills })
+}
+
+#[tauri::command]
+pub fn open_plugin_folder(plugin_name: String) -> Result<(), String> {
+    validate_component(&plugin_name)?;
+    let source = expand_tilde("~/.agents/plugins").join(&plugin_name);
+    if !source.exists() {
+        return Err(format!("插件目录不存在: {}", source.display()));
+    }
+    opener::open(&source).map_err(|e| format!("无法打开目录: {}", e))
 }
 
 /// 同步整个 plugin 到指定 Agent 的 plugins_dir
@@ -280,6 +579,10 @@ pub fn toggle_plugin(
         .iter()
         .find(|a| a.key == agent_key)
         .ok_or_else(|| format!("未知 Agent: {}", agent_key))?;
+
+    if agent.ignored {
+        return Err(format!("Agent「{}」已被忽略，无法同步", agent.display_name));
+    }
 
     let plugins_dir = agent
         .plugins_dir
@@ -484,6 +787,10 @@ pub struct UnmanagedItem {
     pub description: String,
     /// skill 行："独立" 或内嵌它的 plugin 名；plugin 行为空串
     pub source: String,
+    /// 版本号（skill 取 SKILL.md frontmatter / plugin 取 plugin.json），缺省空串
+    pub version: String,
+    /// 修改时间 unix 毫秒
+    pub mtime_ms: u64,
 }
 
 /// 目录是否"看起来是 plugin"（有标准入口或标准子目录）
@@ -513,52 +820,43 @@ fn collect_unmanaged_in(
         if !ep.is_dir() {
             continue;
         }
-        // skill 必须含 SKILL.md 才算资产，顺带解析描述
-        let description = if kind == "skill" {
+        // skill 必须含 SKILL.md 才算资产，顺带解析描述/版本/修改时间
+        let (description, version, mtime_ms) = if kind == "skill" {
             let md = ep.join("SKILL.md");
             if !md.exists() {
                 continue;
             }
             let name0 = ep.file_name().unwrap_or_default().to_string_lossy().to_string();
-            scanner::parse_skill_md(&md, &name0).1
+            let (_, description, version, mtime_ms) = scanner::parse_skill_md(&md, &name0);
+            (description, version, mtime_ms)
         } else {
-            String::new()
+            parse_plugin_meta(&ep)
         };
         let name = ep.file_name().unwrap_or_default().to_string_lossy().to_string();
-        match sync::read_link_target(&ep) {
+        let link_target = match sync::read_link_target(&ep) {
             Ok(target) => {
                 // 指向 ~/.agents 的链接 = 已纳管，跳过
                 if target.starts_with(managed_source) {
                     continue;
                 }
-                if plugin_filter && !looks_like_plugin(&ep) {
-                    continue;
-                }
-                out.push(UnmanagedItem {
-                    agent_key: agent_key.into(),
-                    kind: kind.into(),
-                    name,
-                    path: ep.to_string_lossy().to_string(),
-                    link_target: Some(target.to_string_lossy().to_string()),
-                    description,
-                    source: if kind == "skill" { "独立".into() } else { String::new() },
-                });
+                Some(target.to_string_lossy().to_string())
             }
-            Err(_) => {
-                if plugin_filter && !looks_like_plugin(&ep) {
-                    continue;
-                }
-                out.push(UnmanagedItem {
-                    agent_key: agent_key.into(),
-                    kind: kind.into(),
-                    name,
-                    path: ep.to_string_lossy().to_string(),
-                    link_target: None,
-                    description,
-                    source: if kind == "skill" { "独立".into() } else { String::new() },
-                });
-            }
+            Err(_) => None,
+        };
+        if plugin_filter && !looks_like_plugin(&ep) {
+            continue;
         }
+        out.push(UnmanagedItem {
+            agent_key: agent_key.into(),
+            kind: kind.into(),
+            name,
+            path: ep.to_string_lossy().to_string(),
+            link_target,
+            description,
+            source: if kind == "skill" { "独立".into() } else { String::new() },
+            version,
+            mtime_ms,
+        });
     }
 }
 
@@ -607,7 +905,8 @@ fn collect_unmanaged_plugin_skills(
                 }
             }
             let name = sp.file_name().unwrap_or_default().to_string_lossy().to_string();
-            let description = scanner::parse_skill_md(&sp.join("SKILL.md"), &name).1;
+            let (_, description, version, mtime_ms) =
+                scanner::parse_skill_md(&sp.join("SKILL.md"), &name);
             out.push(UnmanagedItem {
                 agent_key: agent_key.into(),
                 kind: "skill".into(),
@@ -616,6 +915,8 @@ fn collect_unmanaged_plugin_skills(
                 link_target: None,
                 description,
                 source: plugin_name.clone(),
+                version,
+                mtime_ms,
             });
         }
     }
@@ -669,8 +970,8 @@ pub fn get_unmanaged() -> Vec<UnmanagedItem> {
 
 // ---- 纳管：把未纳管资产收编进 ~/.agents 源 ----
 
-/// 纳管前置校验：origin 存在、未纳管、目标名可用
-fn adopt_preflight(origin: &std::path::Path, dest: &std::path::Path) -> Result<(), String> {
+/// 纳管前置校验；overwrite=true 时跳过 dest 冲突检查，自动备份旧目录
+fn adopt_preflight(origin: &std::path::Path, dest: &std::path::Path, overwrite: bool) -> Result<(), String> {
     if !origin.exists() || !origin.is_dir() {
         return Err(format!("目录不存在: {}", origin.display()));
     }
@@ -679,7 +980,23 @@ fn adopt_preflight(origin: &std::path::Path, dest: &std::path::Path) -> Result<(
             return Err("该资产已纳管，无需重复操作".into());
         }
     }
-    if dest.exists() {
+    if overwrite && dest.exists() {
+        let backup_root = expand_tilde("~/.skillink/backups/adopted");
+        std::fs::create_dir_all(&backup_root)
+            .map_err(|e| format!("无法创建备份目录: {}", e))?;
+        let ts = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_millis();
+        let backup_name = format!(
+            "{}-{}",
+            dest.file_name().unwrap_or_default().to_string_lossy(),
+            ts
+        );
+        let bp = backup_root.join(&backup_name);
+        std::fs::rename(dest, &bp)
+            .map_err(|e| format!("备份旧目录失败: {}", e))?;
+    } else if dest.exists() {
         return Err(format!(
             "纳管源中已存在同名资产「{}」，请先处理冲突",
             dest.file_name().unwrap_or_default().to_string_lossy()
@@ -690,7 +1007,7 @@ fn adopt_preflight(origin: &std::path::Path, dest: &std::path::Path) -> Result<(
 
 /// 纳管技能：复制进 ~/.agents/skills；move 模式原位置替换为 junction（原目录先备份）
 #[tauri::command]
-pub fn adopt_skill(path: String, mode: String) -> Result<sync::SyncResult, String> {
+pub fn adopt_skill(path: String, mode: String, overwrite: bool) -> Result<sync::SyncResult, String> {
     let origin = std::path::PathBuf::from(&path);
     if !origin.join("SKILL.md").exists() {
         return Err("不是有效技能（缺少 SKILL.md）".into());
@@ -701,8 +1018,8 @@ pub fn adopt_skill(path: String, mode: String) -> Result<sync::SyncResult, Strin
         .to_string_lossy()
         .to_string();
     let dest = expand_tilde("~/.agents/skills").join(&name);
-    adopt_preflight(&origin, &dest)?;
-    let backup_root = expand_tilde("~/.skillman/backups/adopted");
+    adopt_preflight(&origin, &dest, overwrite)?;
+    let backup_root = expand_tilde("~/.skillink/backups/adopted");
     let res = sync::adopt(&origin, &dest, &mode, &backup_root);
     if res.success {
         Ok(res)
@@ -713,7 +1030,7 @@ pub fn adopt_skill(path: String, mode: String) -> Result<sync::SyncResult, Strin
 
 /// 纳管插件：复制进 ~/.agents/plugins；move 模式原位置替换为 junction（原目录先备份）
 #[tauri::command]
-pub fn adopt_plugin(path: String, mode: String) -> Result<sync::SyncResult, String> {
+pub fn adopt_plugin(path: String, mode: String, overwrite: bool) -> Result<sync::SyncResult, String> {
     let origin = std::path::PathBuf::from(&path);
     if !looks_like_plugin(&origin) {
         return Err("该目录不像插件（缺少 plugin.json / commands / skills 等入口）".into());
@@ -724,14 +1041,144 @@ pub fn adopt_plugin(path: String, mode: String) -> Result<sync::SyncResult, Stri
         .to_string_lossy()
         .to_string();
     let dest = expand_tilde("~/.agents/plugins").join(&name);
-    adopt_preflight(&origin, &dest)?;
-    let backup_root = expand_tilde("~/.skillman/backups/adopted");
+    adopt_preflight(&origin, &dest, overwrite)?;
+    let backup_root = expand_tilde("~/.skillink/backups/adopted");
     let res = sync::adopt(&origin, &dest, &mode, &backup_root);
     if res.success {
         Ok(res)
     } else {
         Err(res.error.unwrap_or_else(|| "纳管失败".into()))
     }
+}
+
+// ---- 删除：纳管资产移入回收区（可恢复），并清理指向它的链接 ----
+
+/// 路径组件校验（skill id / plugin 名用于 join），防路径穿越
+fn validate_component(name: &str) -> Result<(), String> {
+    if name.is_empty() || name == "." || name.contains("..") || name.contains('/') || name.contains('\\') {
+        return Err(format!("非法名称: {}", name));
+    }
+    Ok(())
+}
+
+/// 比较链接解析目标与源路径是否同一目录（canonicalize 失败时退回直接比较）
+fn link_matches(resolved: &std::path::Path, source: &std::path::Path) -> bool {
+    match (std::fs::canonicalize(resolved), std::fs::canonicalize(source)) {
+        (Ok(a), Ok(b)) => a == b,
+        _ => resolved == source,
+    }
+}
+
+#[derive(Debug, Serialize)]
+pub struct DeleteResult {
+    /// 回收区中的位置
+    pub trashed_to: String,
+    /// 顺带清理掉的 Agent 链接数
+    pub removed_links: usize,
+}
+
+/// 删除纳管技能：先清理各 Agent skills_dir 中指向它的 junction，再移入回收区。
+/// copy 模式产生的真实副本不受影响（它们已独立存在）。
+#[tauri::command]
+pub fn delete_skill(skill_id: String, plugin_name: Option<String>) -> Result<DeleteResult, String> {
+    validate_component(&skill_id)?;
+    if let Some(pn) = &plugin_name {
+        validate_component(pn)?;
+    }
+    let source = match &plugin_name {
+        Some(pn) => expand_tilde("~/.agents/plugins").join(pn).join("skills").join(&skill_id),
+        None => expand_tilde("~/.agents/skills").join(&skill_id),
+    };
+    if !source.exists() {
+        return Err("技能不存在或已被删除".into());
+    }
+    if sync::is_reparse_point(&source).unwrap_or(false) {
+        return Err("该技能源目录本身是链接，拒绝删除".into());
+    }
+
+    // 根据 plugin_name 决定目标子目录名（与 toggle_skill / get_matrix 一致）
+    let target_subdir = match &plugin_name {
+        Some(pn) => format!("{}__{}", pn, skill_id),
+        None => skill_id.clone(),
+    };
+
+    let mut removed_links = 0;
+    for agent in registry::load_all_agents() {
+        if agent.key == "agents" {
+            continue;
+        }
+        let target = expand_tilde(&agent.skills_dir).join(&target_subdir);
+        if let Ok(resolved) = sync::read_link_target(&target) {
+            if link_matches(&resolved, &source) && sync::disable_link(&target).success {
+                removed_links += 1;
+            }
+        }
+    }
+
+    let trashed = sync::move_to_trash(&source, "skills")
+        .map_err(|e| format!("移入回收区失败: {}", e))?;
+    Ok(DeleteResult {
+        trashed_to: trashed.to_string_lossy().to_string(),
+        removed_links,
+    })
+}
+
+/// 删除纳管插件：先清理各 Agent 的插件本体链接与其内嵌技能链接，再整体移入回收区。
+#[tauri::command]
+pub fn delete_plugin(plugin_name: String) -> Result<DeleteResult, String> {
+    validate_component(&plugin_name)?;
+    let source = expand_tilde("~/.agents/plugins").join(&plugin_name);
+    if !source.exists() {
+        return Err("插件不存在或已被删除".into());
+    }
+    if sync::is_reparse_point(&source).unwrap_or(false) {
+        return Err("该插件源目录本身是链接，拒绝删除".into());
+    }
+
+    // 收集内嵌技能源路径，用于清理指向它们的链接
+    let mut skill_sources: Vec<(String, std::path::PathBuf)> = Vec::new();
+    if let Ok(entries) = std::fs::read_dir(source.join("skills")) {
+        for entry in entries.flatten() {
+            let sp = entry.path();
+            if sp.is_dir() && sp.join("SKILL.md").exists() {
+                let id = sp.file_name().unwrap_or_default().to_string_lossy().to_string();
+                skill_sources.push((id, sp));
+            }
+        }
+    }
+
+    let mut removed_links = 0;
+    for agent in registry::load_all_agents() {
+        if agent.key == "agents" {
+            continue;
+        }
+        // 插件本体链接
+        if let Some(pd) = &agent.plugins_dir {
+            let target = expand_tilde(pd).join(&plugin_name);
+            if let Ok(resolved) = sync::read_link_target(&target) {
+                if link_matches(&resolved, &source) && sync::disable_link(&target).success {
+                    removed_links += 1;
+                }
+            }
+        }
+        // 内嵌技能链接（目标子目录为 {plugin}__{id} 避免与独立 skill 同名）
+        let skills_dir = expand_tilde(&agent.skills_dir);
+        for (id, sp) in &skill_sources {
+            let target = skills_dir.join(format!("{}__{}", plugin_name, id));
+            if let Ok(resolved) = sync::read_link_target(&target) {
+                if link_matches(&resolved, sp) && sync::disable_link(&target).success {
+                    removed_links += 1;
+                }
+            }
+        }
+    }
+
+    let trashed = sync::move_to_trash(&source, "plugins")
+        .map_err(|e| format!("移入回收区失败: {}", e))?;
+    Ok(DeleteResult {
+        trashed_to: trashed.to_string_lossy().to_string(),
+        removed_links,
+    })
 }
 
 // ---- 体检：冲突 / 漂移 / 断链 ----
@@ -758,7 +1205,7 @@ pub fn get_issues() -> Vec<Issue> {
     let plugins_source = expand_tilde("~/.agents/plugins");
     let mut issues = Vec::new();
 
-    // 1) 冲突：同一 skill id 出现在多个来源（不同 plugin 或独立+plugin）
+    // 1) 同名提示：同一 skill id 出现在多个来源（插件内嵌用 {plugin}__{id} 目标目录，已自动区分，不会覆盖）
     let mut sources_by_id: std::collections::BTreeMap<String, Vec<String>> = std::collections::BTreeMap::new();
     for s in standalone.iter() {
         sources_by_id.entry(s.id.clone()).or_default().push("独立".into());
@@ -768,9 +1215,20 @@ pub fn get_issues() -> Vec<Issue> {
     }
     for (id, sources) in &sources_by_id {
         if sources.len() > 1 {
+            let plugin_names: Vec<String> = sources.iter().filter(|s| *s != "独立").cloned().collect();
+            let target_info: Vec<String> = std::iter::once("独立".to_string())
+                .filter(|_| sources.contains(&"独立".to_string()))
+                .map(|_| format!("独立→{}", id))
+                .chain(plugin_names.iter().map(|pn| format!("{}→{}__{}", pn, pn, id)))
+                .collect();
             issues.push(Issue {
-                kind: "conflict".into(),
-                message: format!("技能 id「{}」存在多个来源：{}（链接时互相覆盖）", id, sources.join("、")),
+                kind: "name_collision".into(),
+                message: format!(
+                    "技能 id「{}」在 {} 个来源中同名——链接时已自动区分目标目录（{}），不会互相覆盖",
+                    id,
+                    sources.len(),
+                    target_info.join(" / ")
+                ),
                 agent_key: None,
                 skill_id: Some(id.clone()),
             });
@@ -778,13 +1236,15 @@ pub fn get_issues() -> Vec<Issue> {
     }
 
     // 2) 漂移与断链：逐 Agent 逐技能检查目标状态
-    let all_skills: Vec<(String, std::path::PathBuf)> = standalone
+    // 给每个 skill 算好源路径和它在 agent 中的目标子目录名（插件内嵌用 {plugin}__{id}）
+    let all_skills_with_target: Vec<(String, std::path::PathBuf, String)> = standalone
         .iter()
-        .map(|s| (s.id.clone(), skills_source.join(&s.id)))
+        .map(|s| (s.id.clone(), skills_source.join(&s.id), s.id.clone()))
         .chain(plugin_skills.iter().map(|s| {
             (
                 s.id.clone(),
                 plugins_source.join(&s.source).join("skills").join(&s.id),
+                format!("{}__{}", s.source, s.id),
             )
         }))
         .collect();
@@ -794,8 +1254,8 @@ pub fn get_issues() -> Vec<Issue> {
             continue;
         }
         let target_dir = expand_tilde(&agent.skills_dir);
-        for (skill_id, src) in &all_skills {
-            let target = target_dir.join(skill_id);
+        for (skill_id, src, target_subdir) in &all_skills_with_target {
+            let target = target_dir.join(target_subdir);
             match sync::read_link_target(&target) {
                 Ok(link_target) => {
                     if !link_target.exists() {
@@ -808,7 +1268,7 @@ pub fn get_issues() -> Vec<Issue> {
                                 link_target.display()
                             ),
                             agent_key: Some(agent.key.clone()),
-                            skill_id: Some(skill_id.clone()),
+                            skill_id: Some(skill_id.to_string()),
                         });
                     }
                 }
@@ -828,7 +1288,7 @@ pub fn get_issues() -> Vec<Issue> {
                                     agent.display_name, skill_id
                                 ),
                                 agent_key: Some(agent.key.clone()),
-                                skill_id: Some(skill_id.clone()),
+                                skill_id: Some(skill_id.to_string()),
                             });
                         }
                     }
@@ -837,6 +1297,65 @@ pub fn get_issues() -> Vec<Issue> {
         }
     }
     issues
+}
+
+/// 修复单个体检问题
+#[tauri::command]
+pub fn repair_issue(
+    kind: String,
+    agent_key: Option<String>,
+    skill_id: Option<String>,
+) -> Result<sync::SyncResult, String> {
+    match kind.as_str() {
+        "broken_link" | "drift" => {
+            let ak = agent_key.ok_or("缺少 agent_key")?;
+            let sid = skill_id.ok_or("缺少 skill_id")?;
+            // 先断开再重连
+            let agents = registry::load_all_agents();
+            let agent = agents.iter().find(|a| a.key == ak)
+                .ok_or_else(|| format!("未知 Agent: {}", ak))?;
+            let target = expand_tilde(&agent.skills_dir).join(&sid);
+            // 如果存在就删掉
+            if target.exists() {
+                if let Ok(true) = sync::is_reparse_point(&target) {
+                    let _ = std::fs::remove_dir(&target);
+                } else if agent.sync_mode == "copy" {
+                    let _ = std::fs::remove_dir_all(&target);
+                }
+            }
+            // 找源路径
+            let skills_source = expand_tilde("~/.agents/skills");
+            let plugins_source = expand_tilde("~/.agents/plugins");
+            let standalone_src = skills_source.join(&sid);
+            let source = if standalone_src.exists() {
+                standalone_src
+            } else {
+                // 搜索 plugin 中的技能
+                let mut found: Option<std::path::PathBuf> = None;
+                if let Ok(entries) = std::fs::read_dir(&plugins_source) {
+                    for entry in entries.flatten() {
+                        let p = entry.path();
+                        if !p.is_dir() { continue; }
+                        let skill_path = p.join("skills").join(&sid);
+                        if skill_path.exists() {
+                            found = Some(skill_path);
+                            break;
+                        }
+                    }
+                }
+                found.ok_or_else(|| format!("找不到技能源: {}", sid))?
+            };
+            if agent.sync_mode == "copy" {
+                copy_dir_recursive(&source, &target)
+                    .map(|_| sync::SyncResult { success: true, mode_used: "copy".into(), error: None })
+                    .map_err(|e| format!("修复失败: {}", e))
+            } else {
+                Ok(sync::enable_link(&source, &target))
+            }
+        }
+        "conflict" | "name_collision" => Err("同名技能已自动通过不同的目标子目录区分（{plugin}__{id}），无需手动处理。".into()),
+        _ => Err(format!("未知问题类型: {}", kind)),
+    }
 }
 
 // ---- 技能详情 ----
@@ -849,6 +1368,23 @@ pub fn read_skill_md(skill_id: String, plugin_name: Option<String>) -> Result<St
     };
     let md = source.join("SKILL.md");
     std::fs::read_to_string(&md).map_err(|_| format!("SKILL.md 不存在: {}", md.display()))
+}
+
+/// 读取某个 skill 的元信息（name, version, description），用于合并时版本比对
+#[tauri::command]
+pub fn get_skill_meta(skill_path: String) -> Result<serde_json::Value, String> {
+    let path = expand_tilde(&skill_path);
+    let skill_md = path.join("SKILL.md");
+    if !skill_md.exists() {
+        return Err("该目录不含 SKILL.md".into());
+    }
+    let (name, description, version, mtime_ms) = scanner::parse_skill_md(&skill_md, &String::new());
+    Ok(serde_json::json!({
+        "name": name,
+        "description": description,
+        "version": version,
+        "mtime_ms": mtime_ms,
+    }))
 }
 
 #[tauri::command]

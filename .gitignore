@@ -18,3 +18,12 @@ src-tauri/gen/schemas/
 # Logs & misc
 *.log
 .DS_Store
+
+# Local tool state
+.claude/
+.codegraph/
+
+# Local environment files
+.env
+.env.*
+!.env.example

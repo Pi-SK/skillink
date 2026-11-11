@@ -7,6 +7,8 @@ export interface AgentStatus {
   skills_dir: string;
   plugins_dir: string | null;
   sync_mode: string;
+  /** 忽略该平台（不同步，但在技能/插件页折叠） */
+  ignored: boolean;
 }
 
 export interface SkillInfo {
@@ -15,6 +17,10 @@ export interface SkillInfo {
   description: string;
   /** "独立" 或 plugin 名 */
   source: string;
+  /** SKILL.md frontmatter 版本号，缺省 "—" */
+  version: string;
+  /** SKILL.md 修改时间 (unix 毫秒) */
+  mtime_ms: number;
 }
 
 export interface MatrixCell {
@@ -29,6 +35,10 @@ export interface PluginInfo {
   has_skills: boolean;
   skill_count: number;
   description: string;
+  /** plugin.json 版本号，缺省为空串 */
+  version: string;
+  /** plugin.json（或插件目录）修改时间 unix 毫秒 */
+  mtime_ms: number;
 }
 
 export interface PluginCell {
@@ -52,10 +62,38 @@ export interface UnmanagedItem {
   path: string;
   /** 若是链接但指向 ~/.agents 之外，则为目标路径 */
   link_target: string | null;
-  /** skill 的描述；plugin 为空串 */
+  /** skill 的描述；plugin 为 plugin.json 描述 */
   description: string;
   /** skill 行："独立" 或内嵌它的 plugin 名；plugin 行为空串 */
   source: string;
+  /** 版本号（skill=SKILL.md frontmatter / plugin=plugin.json），缺省空串 */
+  version: string;
+  /** 修改时间 unix 毫秒 */
+  mtime_ms: number;
+}
+
+/** 插件详情（详情抽屉） */
+export interface PluginDetail {
+  name: string;
+  version: string;
+  description: string;
+  mtime_ms: number;
+  skills: PluginSkillBrief[];
+}
+
+export interface PluginSkillBrief {
+  id: string;
+  name: string;
+  description: string;
+  version: string;
+}
+
+/** 删除结果 */
+export interface DeleteResult {
+  /** 回收区中的位置 */
+  trashed_to: string;
+  /** 顺带清理掉的 Agent 链接数 */
+  removed_links: number;
 }
 
 /** 体检问题项 */

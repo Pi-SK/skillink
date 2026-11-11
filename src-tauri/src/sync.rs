@@ -210,6 +210,31 @@ pub fn is_reparse_point(path: &Path) -> io::Result<bool> {
     Ok(attr.file_attributes() & 0x400 != 0)
 }
 
+/// 把目录移入回收区 ~/.skillink/.trash/<category>/<name>-<ts>（可恢复，绝不物理删除）。
+/// rename 失败（跨盘等）时回退为 copy + remove_dir_all。返回回收区中的最终路径。
+pub fn move_to_trash(path: &Path, category: &str) -> io::Result<PathBuf> {
+    let home = std::env::var("USERPROFILE").unwrap_or_else(|_| ".".to_string());
+    let trash = PathBuf::from(home)
+        .join(".skillink")
+        .join(".trash")
+        .join(category);
+    fs::create_dir_all(&trash)?;
+    let ts = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_millis())
+        .unwrap_or(0);
+    let name = path.file_name().unwrap_or_default().to_string_lossy();
+    let dest = trash.join(format!("{}-{}", name, ts));
+    match fs::rename(path, &dest) {
+        Ok(()) => Ok(dest),
+        Err(_) => {
+            copy_dir_recursive(path, &dest)?;
+            fs::remove_dir_all(path)?;
+            Ok(dest)
+        }
+    }
+}
+
 // ---- internal helpers ----
 
 fn paths_equal(a: &Path, b: &Path) -> bool {
@@ -250,7 +275,7 @@ mod tests {
     use std::fs;
 
     fn tmp_dir(name: &str) -> PathBuf {
-        let dir = std::env::temp_dir().join("skillman_test").join(name);
+        let dir = std::env::temp_dir().join("skillink_test").join(name);
         let _ = fs::remove_dir_all(&dir);
         fs::create_dir_all(&dir).unwrap();
         dir
@@ -374,6 +399,27 @@ mod tests {
         let r = adopt(&origin, &dest, "copy", &backups);
         assert!(!r.success);
 
+        let _ = fs::remove_dir_all(&base);
+    }
+
+    #[test]
+    fn test_move_to_trash() {
+        let base = tmp_dir("trash_me");
+        let victim = base.join("victim");
+        fs::create_dir_all(&victim).unwrap();
+        fs::write(victim.join("SKILL.md"), "keep me").unwrap();
+
+        let trashed = move_to_trash(&victim, "skills_test").expect("trash failed");
+        // 原位置消失
+        assert!(!victim.exists());
+        // 回收区内容完整
+        assert_eq!(
+            fs::read_to_string(trashed.join("SKILL.md")).unwrap(),
+            "keep me"
+        );
+
+        // 清理：回收产物 + 空掉的 base
+        let _ = fs::remove_dir_all(&trashed);
         let _ = fs::remove_dir_all(&base);
     }
 }

@@ -10,6 +10,7 @@ import type {
   Snippet,
   UnmanagedItem,
   Issue,
+  PluginDetail,
 } from "./types";
 
 export const isTauri =
@@ -19,24 +20,28 @@ const delay = <T,>(v: T): Promise<T> =>
   new Promise((r) => setTimeout(() => r(v), 120));
 
 const agents: AgentStatus[] = [
-  { key: "claude", display_name: "Claude Code", detected: true, skills_dir: "~/.claude/skills", plugins_dir: "~/.claude/plugins/data", sync_mode: "auto" },
-  { key: "qwenworkcn", display_name: "QwenWork CN", detected: true, skills_dir: "~/.qwenworkcn/skills", plugins_dir: "~/.qwenworkcn/plugins-custom", sync_mode: "auto" },
-  { key: "qoderworkcn", display_name: "QoderWork CN", detected: true, skills_dir: "~/.qoderworkcn/skills", plugins_dir: "~/.qoderworkcn/plugins-custom", sync_mode: "auto" },
-  { key: "codex", display_name: "Codex", detected: true, skills_dir: "~/.codex/skills", plugins_dir: null, sync_mode: "auto" },
-  { key: "copilot", display_name: "GitHub Copilot", detected: false, skills_dir: "~/.copilot/skills", plugins_dir: null, sync_mode: "auto" },
+  { key: "claude", display_name: "Claude Code", detected: true, skills_dir: "~/.claude/skills", plugins_dir: "~/.claude/plugins/data", sync_mode: "auto", ignored: false },
+  { key: "qwenworkcn", display_name: "QwenWork CN", detected: true, skills_dir: "~/.qwenworkcn/skills", plugins_dir: "~/.qwenworkcn/plugins-custom", sync_mode: "auto", ignored: false },
+  { key: "qoderworkcn", display_name: "QoderWork CN", detected: true, skills_dir: "~/.qoderworkcn/skills", plugins_dir: "~/.qoderworkcn/plugins-custom", sync_mode: "auto", ignored: false },
+  { key: "codex", display_name: "Codex", detected: true, skills_dir: "~/.codex/skills", plugins_dir: null, sync_mode: "auto", ignored: false },
+  { key: "qodercn", display_name: "Qoder CN", detected: false, skills_dir: "~/.qoder-cn/skills", plugins_dir: null, sync_mode: "auto", ignored: false },
+  { key: "opencode", display_name: "OpenCode", detected: true, skills_dir: "~/.config/opencode/skills", plugins_dir: null, sync_mode: "auto", ignored: false },
+  { key: "zcode", display_name: "ZCode", detected: false, skills_dir: "~/.zcode/skills", plugins_dir: null, sync_mode: "auto", ignored: false },
+  { key: "pi", display_name: "Pi", detected: false, skills_dir: "~/.pi/agent/skills", plugins_dir: null, sync_mode: "auto", ignored: false },
+  { key: "copilot", display_name: "GitHub Copilot", detected: false, skills_dir: "~/.copilot/skills", plugins_dir: null, sync_mode: "auto", ignored: false },
 ];
 
 const skills: SkillInfo[] = [
-  { id: "deep-research", name: "deep-research", description: "系统性深度调研：来源核验、三角互证、带引用的报告", source: "独立" },
-  { id: "frontend-design", name: "frontend-design", description: "创建高设计质量的生产级前端界面", source: "独立" },
-  { id: "paper-analyzer", name: "paper-analyzer", description: "将学术论文转化为深度 HTML 长文，6 轮强制工作流", source: "独立" },
-  { id: "natural-writing", name: "natural-writing", description: "像人一样写作，去除语言模型痕迹", source: "独立" },
-  { id: "pdf", name: "pdf", description: "PDF 读取、合并、拆分、旋转、水印、创建", source: "独立" },
-  { id: "docx", name: "docx", description: "Word 文档端到端创建、读取、编辑", source: "独立" },
-  { id: "audit", name: "audit", description: "改版项目体验走查、启发式评估", source: "product-design" },
-  { id: "brief", name: "brief", description: "设计简报：一页纸对齐业务目标与设计标准", source: "product-design" },
-  { id: "flow-web", name: "flow-web", description: "Web 端多屏 flow 与信息架构设计", source: "product-design" },
-  { id: "synthesis", name: "synthesis", description: "跨来源整合、矛盾消解与缺口分析", source: "academic-research-skills" },
+  { id: "deep-research", name: "deep-research", description: "系统性深度调研：来源核验、三角互证、带引用的报告", source: "独立", version: "2.1.0", mtime_ms: 1753459200000 },
+  { id: "frontend-design", name: "frontend-design", description: "创建高设计质量的生产级前端界面", source: "独立", version: "1.5.0", mtime_ms: 1753200000000 },
+  { id: "paper-analyzer", name: "paper-analyzer", description: "将学术论文转化为深度 HTML 长文，6 轮强制工作流", source: "独立", version: "3.0.0", mtime_ms: 1753545600000 },
+  { id: "natural-writing", name: "natural-writing", description: "像人一样写作，去除语言模型痕迹", source: "独立", version: "1.2.0", mtime_ms: 1753113600000 },
+  { id: "pdf", name: "pdf", description: "PDF 读取、合并、拆分、旋转、水印、创建", source: "独立", version: "2.0.1", mtime_ms: 1753027200000 },
+  { id: "docx", name: "docx", description: "Word 文档端到端创建、读取、编辑", source: "独立", version: "1.0.0", mtime_ms: 1752940800000 },
+  { id: "audit", name: "audit", description: "改版项目体验走查、启发式评估", source: "product-design", version: "1.1.0", mtime_ms: 1753286400000 },
+  { id: "brief", name: "brief", description: "设计简报：一页纸对齐业务目标与设计标准", source: "product-design", version: "1.0.0", mtime_ms: 1753372800000 },
+  { id: "flow-web", name: "flow-web", description: "Web 端多屏 flow 与信息架构设计", source: "product-design", version: "0.9.0", mtime_ms: 1752854400000 },
+  { id: "synthesis", name: "synthesis", description: "跨来源整合、矛盾消解与缺口分析", source: "academic-research-skills", version: "1.3.0", mtime_ms: 1753632000000 },
 ];
 
 // 已链接集合: agent::source::skill
@@ -70,8 +75,8 @@ for (const s of skills) {
 }
 
 const plugins: PluginInfo[] = [
-  { name: "product-design", has_skills: true, skill_count: 3, description: "产品设计套件：简报 / 走查 / Flow / 情绪板" },
-  { name: "academic-research-skills", has_skills: true, skill_count: 1, description: "学术研究全流程管线" },
+  { name: "product-design", has_skills: true, skill_count: 3, description: "产品设计套件：简报 / 走查 / Flow / 情绪板", version: "1.4.0", mtime_ms: 1753372800000 },
+  { name: "academic-research-skills", has_skills: true, skill_count: 1, description: "学术研究全流程管线", version: "3.6.7", mtime_ms: 1753632000000 },
 ];
 
 const pluginLinked = new Set([
@@ -94,6 +99,10 @@ for (const p of plugins) {
 const instructionDocs: InstructionDoc[] = [
   { agent_key: "claude", file_name: "CLAUDE.md", rel_path: ".claude/CLAUDE.md", role: "指令", editable: true, exists: true, size: 2048, modified: Math.floor(Date.now() / 1000) - 86400 },
   { agent_key: "codex", file_name: "AGENTS.md", rel_path: ".codex/AGENTS.md", role: "指令", editable: true, exists: true, size: 4096, modified: Math.floor(Date.now() / 1000) - 3600 },
+  { agent_key: "qodercn", file_name: "AGENTS.md", rel_path: ".qoder-cn/AGENTS.md", role: "指令", editable: true, exists: false, size: 0, modified: 0 },
+  { agent_key: "opencode", file_name: "AGENTS.md", rel_path: ".config/opencode/AGENTS.md", role: "指令", editable: true, exists: true, size: 1560, modified: Math.floor(Date.now() / 1000) - 5400 },
+  { agent_key: "zcode", file_name: "AGENTS.md", rel_path: ".zcode/AGENTS.md", role: "指令", editable: true, exists: false, size: 0, modified: 0 },
+  { agent_key: "pi", file_name: "AGENTS.md", rel_path: ".pi/agent/AGENTS.md", role: "指令", editable: true, exists: false, size: 0, modified: 0 },
   { agent_key: "qwenworkcn", file_name: "AGENTS.md", rel_path: ".qwenworkcn/awareness/main/AGENTS.md", role: "指令", editable: true, exists: true, size: 3100, modified: Math.floor(Date.now() / 1000) - 7200 },
   { agent_key: "qwenworkcn", file_name: "SOUL.md", rel_path: ".qwenworkcn/awareness/main/SOUL.md", role: "人格", editable: true, exists: true, size: 1200, modified: Math.floor(Date.now() / 1000) - 500 },
   { agent_key: "qwenworkcn", file_name: "USER.md", rel_path: ".qwenworkcn/awareness/main/USER.md", role: "用户画像", editable: true, exists: true, size: 800, modified: Math.floor(Date.now() / 1000) - 100 },
@@ -103,6 +112,7 @@ const instructionDocs: InstructionDoc[] = [
 const mockDocContents = new Map<string, string>([
   ["claude::CLAUDE.md", "# Claude 全局指令\n\n- 先思考再编码\n- 简洁优先\n"],
   ["codex::AGENTS.md", "# Codex Agents\n\n## Coding Rules\n\n1. 外科手术式修改\n"],
+  ["opencode::AGENTS.md", "# OpenCode 全局指令\n\n- 简洁优先\n- 修改前先读相关代码\n"],
   ["qwenworkcn::AGENTS.md", "# Instructions\n\n## Basic Info\n\n用户：研究生\n"],
   ["qwenworkcn::SOUL.md", "# SOUL - 协作风格\n\n深思熟虑，想清楚再动手。\n"],
   ["qwenworkcn::USER.md", "# User Profile\n\n重庆大学经管学院研究生\n"],
@@ -115,12 +125,12 @@ const snippets: Snippet[] = [
 ];
 
 let unmanagedItems: UnmanagedItem[] = [
-  { agent_key: "qwenworkcn", kind: "skill", name: "lark-im", path: "~/.qwenworkcn/skills/lark-im", link_target: null, description: "发送飞书 IM 消息", source: "独立" },
-  { agent_key: "qwenworkcn", kind: "skill", name: "lark-doc", path: "~/.qwenworkcn/skills/lark-doc", link_target: null, description: "创建与编辑飞书文档", source: "独立" },
-  { agent_key: "qwenworkcn", kind: "skill", name: "brief", path: "~/.qwenworkcn/plugins/consulting-delivery/skills/brief", link_target: null, description: "项目简报生成", source: "consulting-delivery" },
-  { agent_key: "qwenworkcn", kind: "plugin", name: "consulting-delivery", path: "~/.qwenworkcn/plugins/consulting-delivery", link_target: null, description: "咨询交付套件", source: "" },
-  { agent_key: "claude", kind: "plugin", name: "claude-mem-inline", path: "~/.claude/plugins/data/claude-mem-inline", link_target: null, description: "内联记忆插件", source: "" },
-  { agent_key: "qoderworkcn", kind: "skill", name: "xlsx", path: "~/.qoderworkcn/skills/xlsx", link_target: null, description: "Excel 表格处理", source: "独立" },
+  { agent_key: "qwenworkcn", kind: "skill", name: "lark-im", path: "~/.qwenworkcn/skills/lark-im", link_target: null, description: "发送飞书 IM 消息", source: "独立", version: "1.0.2", mtime_ms: 1753200000000 },
+  { agent_key: "qwenworkcn", kind: "skill", name: "lark-doc", path: "~/.qwenworkcn/skills/lark-doc", link_target: null, description: "创建与编辑飞书文档", source: "独立", version: "", mtime_ms: 1753113600000 },
+  { agent_key: "qwenworkcn", kind: "skill", name: "brief", path: "~/.qwenworkcn/plugins/consulting-delivery/skills/brief", link_target: null, description: "项目简报生成", source: "consulting-delivery", version: "0.8.0", mtime_ms: 1752854400000 },
+  { agent_key: "qwenworkcn", kind: "plugin", name: "consulting-delivery", path: "~/.qwenworkcn/plugins/consulting-delivery", link_target: null, description: "咨询交付套件", source: "", version: "2.1.0", mtime_ms: 1753027200000 },
+  { agent_key: "claude", kind: "plugin", name: "claude-mem-inline", path: "~/.claude/plugins/data/claude-mem-inline", link_target: null, description: "内联记忆插件", source: "", version: "", mtime_ms: 1752940800000 },
+  { agent_key: "qoderworkcn", kind: "skill", name: "xlsx", path: "~/.qoderworkcn/skills/xlsx", link_target: null, description: "Excel 表格处理", source: "独立", version: "1.1.0", mtime_ms: 1753286400000 },
 ];
 
 const issues: Issue[] = [
@@ -129,12 +139,28 @@ const issues: Issue[] = [
   { kind: "broken_link", message: "Claude Code 中的 old-skill 是断链（指向不存在的 ~/.agents/skills/old-skill）", agent_key: "claude", skill_id: "old-skill" },
 ];
 
+/** mock 插件详情：从 plugins 数据构造（内嵌技能取 skills 中 source 匹配项） */
+function mockPluginDetail(pluginName: string): PluginDetail {
+  const p = plugins.find((x) => x.name === pluginName);
+  const embedded = skills
+    .filter((s) => s.source === pluginName)
+    .map((s) => ({ id: s.id, name: s.name, description: s.description, version: s.version }));
+  return {
+    name: pluginName,
+    version: p?.version ?? "",
+    description: p?.description ?? "",
+    mtime_ms: p?.mtime_ms ?? 0,
+    skills: embedded,
+  };
+}
+
 export const mock = {
   getAgents: () => delay(agents),
   getSkills: () => delay(skills),
   getMatrix: () => delay(matrix),
   getPlugins: () => delay(plugins),
   getPluginMatrix: () => delay(pluginMatrix),
+  getPluginDetail: (pluginName: string) => delay(mockPluginDetail(pluginName)),
   getInstructionDocs: () => delay(instructionDocs),
   readInstructionDoc: (agentKey: string, fileName: string) =>
     delay(mockDocContents.get(`${agentKey}::${fileName}`) ?? ""),
@@ -150,6 +176,37 @@ export const mock = {
 /** mock 纳管：从未纳管列表移除该项（模拟收编进 ~/.agents） */
 export function mockAdopt(path: string) {
   unmanagedItems = unmanagedItems.filter((i) => i.path !== path);
+}
+
+/** mock 删除技能：从技能列表与矩阵移除 */
+export function mockDeleteSkill(skillId: string, source: string) {
+  const idx = skills.findIndex((s) => s.id === skillId && s.source === source);
+  if (idx >= 0) skills.splice(idx, 1);
+  for (let i = matrix.length - 1; i >= 0; i--) {
+    if (matrix[i].skill_id === skillId && matrix[i].source === source) matrix.splice(i, 1);
+  }
+}
+
+/** mock 删除插件：从插件列表与矩阵移除，同时移除其内嵌技能 */
+export function mockDeletePlugin(pluginName: string) {
+  const idx = plugins.findIndex((p) => p.name === pluginName);
+  if (idx >= 0) plugins.splice(idx, 1);
+  for (let i = pluginMatrix.length - 1; i >= 0; i--) {
+    if (pluginMatrix[i].plugin_name === pluginName) pluginMatrix.splice(i, 1);
+  }
+  mockDeleteEmbedded(pluginName);
+}
+
+function mockDeleteEmbedded(pluginName: string) {
+  for (let i = skills.length - 1; i >= 0; i--) {
+    if (skills[i].source === pluginName) {
+      const id = skills[i].id;
+      skills.splice(i, 1);
+      for (let j = matrix.length - 1; j >= 0; j--) {
+        if (matrix[j].skill_id === id && matrix[j].source === pluginName) matrix.splice(j, 1);
+      }
+    }
+  }
 }
 
 /** 切换 mock 中的链接状态（模拟同步） */

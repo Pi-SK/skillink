@@ -58,7 +58,7 @@ export function ToastProvider({ children }: { children: ReactNode }) {
   return (
     <ToastCtx.Provider value={{ push }}>
       {children}
-      <div className="toast-host">
+      <div className="toast-host" role="status" aria-live="polite">
         {items.map((t) => {
           const Icon = ICONS[t.type];
           return (

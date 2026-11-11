@@ -9,13 +9,25 @@ import {
   FolderDown,
   Sun,
   Moon,
+  Minus,
+  Square,
+  X,
 } from "lucide-react";
 import { ToastProvider, useToast } from "./components/Toast";
 import { DataProvider, useData } from "./store";
+import { NavigationGuardProvider, useNavigationGuard } from "./components/NavigationGuard";
 import { SkillsPage } from "./pages/SkillsPage";
 import { PluginsPage } from "./pages/PluginsPage";
 import { SettingsPage } from "./pages/SettingsPage";
-import { importSkill } from "./api";
+import { GlobalTooltip } from "./components/GlobalTooltip";
+import {
+  importSkill,
+  setWindowEffect,
+  startWindowDrag,
+  minimizeWindow,
+  toggleMaximizeWindow,
+  closeWindow,
+} from "./api";
 import { isTauri } from "./mock";
 
 // 文档页携带 CodeMirror/marked 等重型依赖，按需加载
@@ -35,27 +47,44 @@ const NAV_ITEMS: { key: PageKey; label: string; icon: typeof Zap; desc: string }
 function Shell() {
   const [page, setPage] = useState<PageKey>("skills");
   const [dragging, setDragging] = useState(false);
+  const [refreshing, setRefreshing] = useState(false);
   const [theme, setTheme] = useState<"dark" | "light">(() =>
-    localStorage.getItem("skillman.theme") === "light" ? "light" : "dark"
+    localStorage.getItem("skillink.theme") === "light" ? "light" : "dark"
   );
   const { agents, reload } = useData();
   const { push } = useToast();
+  const { guard } = useNavigationGuard();
+
+  const handleReload = async () => {
+    if (refreshing) return;
+    setRefreshing(true);
+    try {
+      // 动画最低保持 700ms，避免刷新太快导致转圈只闪一下
+      await Promise.all([
+        reload(),
+        new Promise((r) => setTimeout(r, 700)),
+      ]);
+    } finally {
+      setRefreshing(false);
+    }
+  };
 
   const toggleTheme = () => {
     const next = theme === "dark" ? "light" : "dark";
     setTheme(next);
-    localStorage.setItem("skillman.theme", next);
+    localStorage.setItem("skillink.theme", next);
     if (next === "light") {
       document.documentElement.setAttribute("data-theme", "light");
     } else {
       document.documentElement.removeAttribute("data-theme");
     }
+    // 桌面端：切换 Mica 深/浅材质，保持窗口材质与主题一致
+    setWindowEffect(next);
   };
 
-  const active = NAV_ITEMS.find((n) => n.key === page)!;
-  const detectedCount = agents.filter((a) => a.detected && a.key !== "agents").length;
-  const totalCount = agents.filter((a) => a.key !== "agents").length;
-
+  // 左下角概览：活跃 = 未忽略的平台；共 = 检测到（已安装）的平台；均排除 .agents 源目录
+  const activeCount = agents.filter((a) => a.key !== "agents" && !a.ignored).length;
+  const totalCount = agents.filter((a) => a.key !== "agents" && a.detected).length;
   // Tauri 原生拖拽：拿到真实文件路径直接导入
   useEffect(() => {
     if (!isTauri) return;
@@ -107,8 +136,8 @@ function Shell() {
             <Waypoints size={17} strokeWidth={2} />
           </div>
           <div className="brand-text">
-            <div className="brand-name">Skill Mana</div>
-            <div className="brand-sub">Agent 资产管理</div>
+            <div className="brand-name">Skillink</div>
+            <div className="brand-sub">Agent Skill 管理</div>
           </div>
         </div>
 
@@ -119,7 +148,7 @@ function Shell() {
               <button
                 key={item.key}
                 className={`nav-item ${page === item.key ? "active" : ""}`}
-                onClick={() => setPage(item.key)}
+                onClick={() => guard(() => setPage(item.key))}
               >
                 <Icon size={16} strokeWidth={2} />
                 <span>{item.label}</span>
@@ -129,7 +158,11 @@ function Shell() {
         </div>
 
         <div className="navrail-footer">
-          <div className="agent-summary" onClick={() => setPage("settings")} title="查看 Agent 详情">
+          <button
+            className="agent-summary"
+            onClick={() => guard(() => setPage("settings"))}
+            title="查看 Agent 详情"
+          >
             <div className="agent-summary-dots">
               {agents
                 .filter((a) => a.key !== "agents")
@@ -137,35 +170,66 @@ function Shell() {
                 .map((a) => (
                   <span
                     key={a.key}
-                    className={`summary-dot ${a.detected ? "on" : ""}`}
-                    title={`${a.display_name}: ${a.detected ? "已安装" : "未安装"}`}
+                    className={`summary-dot ${a.ignored ? "" : "on"}`}
+                    title={`${a.display_name}: ${a.ignored ? "已忽略" : "活跃"}`}
                   />
                 ))}
             </div>
             <span className="agent-summary-text">
-              {detectedCount}/{totalCount} Agents
+              活跃 {activeCount} / 共 {totalCount}
             </span>
-          </div>
+          </button>
         </div>
       </nav>
 
       <div className="main">
         <header className="topbar">
-          <div className="topbar-title">
-            {active.label}
-            <span className="topbar-desc">{active.desc}</span>
+          {/* 无边框窗口拖拽区：空白处按住拖动整个窗口，双击最大化/还原 */}
+          <div
+            className="topbar-drag"
+            data-role="draggable"
+            onMouseDown={(e) => {
+              if (e.button !== 0) return;
+              if (e.detail === 2) {
+                // 双击：最大化/还原，不进入拖拽循环
+                toggleMaximizeWindow();
+              } else {
+                startWindowDrag();
+              }
+            }}
+            title="拖动窗口"
+          />
+          <div className="topbar-actions">
+            <button
+              className="btn btn-ghost"
+              onClick={handleReload}
+              disabled={refreshing}
+              title={refreshing ? "正在重新扫描…" : "重新扫描"}
+            >
+              <RefreshCw size={14} className={refreshing ? "spin" : ""} />
+              {refreshing ? "扫描中…" : "刷新"}
+            </button>
+            <button
+              className="btn btn-ghost"
+              onClick={toggleTheme}
+              title={theme === "dark" ? "切换到浅色主题" : "切换到深色主题"}
+            >
+              {theme === "dark" ? <Sun size={14} /> : <Moon size={14} />}
+            </button>
           </div>
-          <button
-            className="btn btn-ghost"
-            onClick={toggleTheme}
-            title={theme === "dark" ? "切换到浅色主题" : "切换到深色主题"}
-          >
-            {theme === "dark" ? <Sun size={14} /> : <Moon size={14} />}
-          </button>
-          <button className="btn btn-ghost" onClick={reload} title="重新扫描">
-            <RefreshCw size={14} />
-            刷新
-          </button>
+          {isTauri && (
+            <div className="window-controls">
+              <button className="win-btn" onClick={minimizeWindow} title="最小化">
+                <Minus size={14} />
+              </button>
+              <button className="win-btn" onClick={toggleMaximizeWindow} title="最大化/还原">
+                <Square size={12} />
+              </button>
+              <button className="win-btn win-btn-close" onClick={closeWindow} title="关闭">
+                <X size={14} />
+              </button>
+            </div>
+          )}
         </header>
 
         <main className="content">
@@ -197,7 +261,10 @@ function App() {
   return (
     <ToastProvider>
       <DataProvider>
-        <Shell />
+        <NavigationGuardProvider>
+          <Shell />
+          <GlobalTooltip />
+        </NavigationGuardProvider>
       </DataProvider>
     </ToastProvider>
   );

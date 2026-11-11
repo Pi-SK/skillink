@@ -15,6 +15,7 @@ import CodeMirror, { EditorView } from "@uiw/react-codemirror";
 import { markdown } from "@codemirror/lang-markdown";
 import { useData } from "../store";
 import { useToast } from "../components/Toast";
+import { useNavigationGuard } from "../components/NavigationGuard";
 import { ConfirmDialog } from "../components/ConfirmDialog";
 import { Markdown } from "../components/Markdown";
 import { EmptyState } from "../components/EmptyState";
@@ -22,6 +23,7 @@ import { SnippetsTab } from "./SnippetsTab";
 import { isTauri } from "../mock";
 import { fmtSize, fmtRelTime, fmtTime } from "../util";
 import type { InstructionDoc, BackupInfo } from "../types";
+import { AgentBrandIcon } from "../AgentIcon";
 import * as api from "../api";
 
 const cmTheme = EditorView.theme(
@@ -37,12 +39,12 @@ const cmTheme = EditorView.theme(
       borderRight: "1px solid var(--border-soft)",
       color: "var(--text-faint)",
     },
-    ".cm-activeLine": { backgroundColor: "rgba(79,195,247,0.05)" },
+    ".cm-activeLine": { backgroundColor: "rgba(91,141,239,0.05)" },
     ".cm-activeLineGutter": { backgroundColor: "transparent" },
     "&.cm-focused": { outline: "none" },
     ".cm-cursor": { borderLeftColor: "var(--accent)" },
     ".cm-selectionBackground, &.cm-focused .cm-selectionBackground": {
-      backgroundColor: "rgba(79,195,247,0.18) !important",
+      backgroundColor: "rgba(91,141,239,0.18) !important",
     },
   },
   { dark: true }
@@ -55,6 +57,7 @@ const keyOf = (k: DocKey) => `${k.agentKey}::${k.fileName}`;
 
 export function DocsPage() {
   const [subTab, setSubTab] = useState<"docs" | "snippets">("docs");
+  const { guard } = useNavigationGuard();
 
   return (
     <div className="page page-tight">
@@ -62,14 +65,14 @@ export function DocsPage() {
         <div className="tab-bar">
           <button
             className={`tab-btn ${subTab === "docs" ? "active" : ""}`}
-            onClick={() => setSubTab("docs")}
+            onClick={() => guard(() => setSubTab("docs"))}
           >
             <FileText size={13} />
             指令文档
           </button>
           <button
             className={`tab-btn ${subTab === "snippets" ? "active" : ""}`}
-            onClick={() => setSubTab("snippets")}
+            onClick={() => guard(() => setSubTab("snippets"))}
           >
             <Scissors size={13} />
             共享片段
@@ -91,6 +94,7 @@ export function DocsPage() {
 function DocsTab() {
   const { agents } = useData();
   const { push } = useToast();
+  const { setDirty } = useNavigationGuard();
   const [docs, setDocs] = useState<InstructionDoc[]>([]);
   const [loading, setLoading] = useState(true);
   const [selected, setSelected] = useState<DocKey | null>(null);
@@ -149,6 +153,12 @@ function DocsTab() {
   );
 
   const dirty = content !== original;
+
+  // 上报脏状态给全局守卫（跨页/跨子标签离场时拦截）
+  useEffect(() => {
+    setDirty("docs", dirty);
+    return () => setDirty("docs", false);
+  }, [dirty, setDirty]);
 
   const openDoc = useCallback(
     async (key: DocKey) => {
@@ -250,6 +260,7 @@ function DocsTab() {
         icon={FileText}
         title="未发现任何约束文档"
         description="未在本机找到 CLAUDE.md / AGENTS.md / awareness 文档。安装对应 Agent 后刷新即可。"
+        action={{ label: "刷新", onClick: () => loadDocs() }}
       />
     );
   }
@@ -269,7 +280,7 @@ function DocsTab() {
               requestSelect({ agentKey, fileName: first.file_name });
             }}
           >
-            <span className="agent-avatar">{agentName(agentKey).charAt(0).toUpperCase()}</span>
+            <AgentBrandIcon agentKey={agentKey} linked size={22} className="agent-avatar" />
             <div className="doc-agent-info">
               <div className="doc-agent-name">{agentName(agentKey)}</div>
               <div className="doc-agent-sub">
@@ -314,7 +325,7 @@ function DocsTab() {
           <EmptyState
             icon={PenLine}
             title="选择一个文档开始编辑"
-            description="保存时自动备份到 ~/.skillman/backups/，可随时恢复。MEMORY.md 等程序自维护文件为只读。"
+            description="保存时自动备份到 ~/.skillink/backups/，可随时恢复。MEMORY.md 等程序自维护文件为只读。"
           />
         ) : (
           <>
@@ -412,6 +423,7 @@ function DocsTab() {
                 </div>
               ) : (
                 <CodeMirror
+                  height="100%"
                   value={content}
                   onChange={setContent}
                   readOnly={!selectedDoc.editable}

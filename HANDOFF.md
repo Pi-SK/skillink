@@ -1,5 +1,7 @@
 # HANDOFF.md — Skill Mana 设计重点与避坑记录
 
+> 历史开发记录：文中的产品名称、版本、路径和状态可能已经过时。当前项目说明见 [README.md](README.md)，实际行为以代码为准。
+
 > 本文档记录 Skill Mana（技能管理器）v0.1.0 开发过程中涉及的核心架构决策、跨 Agent 兼容性发现、以及踩过的坑，供后续迭代参考。
 
 ---
@@ -212,6 +214,14 @@ agent_skill_mana/
 
 - 当前仅支持 Windows（NTFS junction）；macOS/Linux symlink 适配标记为后续方向。
 
+### 6.8 删除机制（M5）
+
+- **删除 = 移入回收区 + 清理链接**：`sync::move_to_trash(path, category)` 移入 `~/.skillman/.trash/<category>/<名>-<毫秒时间戳>`，rename 失败回退 copy+remove；与片段删除同一回收区约定，绝不物理删除。
+- `delete_skill` / `delete_plugin`：先用 `read_link_target` + canonicalize 比较找出各 Agent 目录中指向该源的 junction 并 `disable_link`（插件会连内嵌技能链接一起清理），再移入回收区；copy 模式产生的真实副本不动。
+- 源目录本身是 reparse point 时拒删（防误删链接目标）；skill_id / plugin_name 均过 `validate_component` 防路径穿越。
+- 前端多选：行首 30px sticky 多选框列，技能名 sticky left:30px；选择键 `m::source::id`（纳管行→删除）与 `u::path`（未纳管行→批量纳管）共存于同一 Set，选择操作栏按前缀分别计数。
+- 矩阵末尾 `minmax(0,1fr)` 填充列吸收窗口余宽（内容溢出时该列收缩为 0，不影响横向滚动）。
+
 ---
 
 ## 7. 后续方向
@@ -219,6 +229,8 @@ agent_skill_mana/
 - [x] 纳管机制（adopt_skill / adopt_plugin）
 - [x] 完整扫描模型（含未纳管插件内嵌 skill + npx skills 渠道）
 - [x] 深浅双主题（设计系统 v3）
+- [x] 删除机制（多选删除，移入 ~/.skillman/.trash 回收区，自动清理链接）
+- [x] 各 Agent 平台官方 logo + 表头平台名
 - [ ] VSIX Extension 同步支持（`.qoder/extensions/` 等）
 - [ ] Plugin marketplace 注册表自动发现（避免手动复制到 `~/.agents/plugins/`）
 - [ ] macOS/Linux 的 symlink 支持（当前仅 NTFS junction）

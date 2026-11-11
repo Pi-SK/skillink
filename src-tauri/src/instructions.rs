@@ -23,6 +23,10 @@ pub fn doc_specs() -> Vec<DocSpec> {
     vec![
         DocSpec { agent_key: "claude", file_name: "CLAUDE.md", rel_path: ".claude/CLAUDE.md", role: "指令", editable: true },
         DocSpec { agent_key: "codex", file_name: "AGENTS.md", rel_path: ".codex/AGENTS.md", role: "指令", editable: true },
+        DocSpec { agent_key: "qodercn", file_name: "AGENTS.md", rel_path: ".qoder-cn/AGENTS.md", role: "指令", editable: true },
+        DocSpec { agent_key: "opencode", file_name: "AGENTS.md", rel_path: ".config/opencode/AGENTS.md", role: "指令", editable: true },
+        DocSpec { agent_key: "zcode", file_name: "AGENTS.md", rel_path: ".zcode/AGENTS.md", role: "指令", editable: true },
+        DocSpec { agent_key: "pi", file_name: "AGENTS.md", rel_path: ".pi/agent/AGENTS.md", role: "指令", editable: true },
         DocSpec { agent_key: "qwenworkcn", file_name: "AGENTS.md", rel_path: ".qwenworkcn/awareness/main/AGENTS.md", role: "指令", editable: true },
         DocSpec { agent_key: "qwenworkcn", file_name: "SOUL.md", rel_path: ".qwenworkcn/awareness/main/SOUL.md", role: "人格", editable: true },
         DocSpec { agent_key: "qwenworkcn", file_name: "USER.md", rel_path: ".qwenworkcn/awareness/main/USER.md", role: "用户画像", editable: true },
@@ -110,7 +114,7 @@ pub struct WriteResult {
     pub bytes_written: usize,
 }
 
-/// 写盘前自动备份原文件到 ~/.skillman/backups/<agent>/<file>.<时间戳>
+/// 写盘前自动备份原文件到 ~/.skillink/backups/<agent>/<file>.<时间戳>
 fn backup_before_write(agent_key: &str, file_name: &str, path: &Path) -> Option<String> {
     if !path.exists() {
         return None;
@@ -153,7 +157,7 @@ pub fn write_doc(agent_key: &str, file_name: &str, content: &str) -> Result<Writ
 // ---- 备份管理 ----
 
 fn backups_dir(agent_key: &str) -> PathBuf {
-    home_dir().join(".skillman").join("backups").join(agent_key)
+    home_dir().join(".skillink").join("backups").join(agent_key)
 }
 
 fn timestamp() -> String {
@@ -285,7 +289,7 @@ pub struct Snippet {
 }
 
 fn snippets_dir() -> PathBuf {
-    home_dir().join(".skillman").join("snippets")
+    home_dir().join(".skillink").join("snippets")
 }
 
 fn snippet_path(id: &str) -> Result<PathBuf, String> {
@@ -344,13 +348,13 @@ pub fn save_snippet(id: &str, name: &str, content: &str) -> Result<Snippet, Stri
     })
 }
 
-/// 删除片段：移入 ~/.skillman/.trash/ 而非永久删除
+/// 删除片段：移入 ~/.skillink/.trash/ 而非永久删除
 pub fn delete_snippet(id: &str) -> Result<(), String> {
     let path = snippet_path(id)?;
     if !path.exists() {
         return Ok(());
     }
-    let trash = home_dir().join(".skillman").join(".trash");
+    let trash = home_dir().join(".skillink").join(".trash");
     std::fs::create_dir_all(&trash).map_err(|e| format!("无法创建回收目录: {}", e))?;
     let ts = timestamp();
     let dest = trash.join(format!("snippet-{}-{}.md", id, ts));

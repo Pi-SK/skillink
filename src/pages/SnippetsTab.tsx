@@ -13,6 +13,7 @@ import {
 import CodeMirror, { EditorView } from "@uiw/react-codemirror";
 import { markdown } from "@codemirror/lang-markdown";
 import { useToast } from "../components/Toast";
+import { useNavigationGuard } from "../components/NavigationGuard";
 import { ConfirmDialog } from "../components/ConfirmDialog";
 import { isTauri } from "../mock";
 import type { Snippet, InstructionDoc, SyncTarget, SyncPreviewItem } from "../types";
@@ -31,12 +32,12 @@ const cmTheme = EditorView.theme(
       borderRight: "1px solid var(--border-soft)",
       color: "var(--text-faint)",
     },
-    ".cm-activeLine": { backgroundColor: "rgba(79,195,247,0.05)" },
+    ".cm-activeLine": { backgroundColor: "rgba(91,141,239,0.05)" },
     ".cm-activeLineGutter": { backgroundColor: "transparent" },
     "&.cm-focused": { outline: "none" },
     ".cm-cursor": { borderLeftColor: "var(--accent)" },
     ".cm-selectionBackground, &.cm-focused .cm-selectionBackground": {
-      backgroundColor: "rgba(79,195,247,0.18) !important",
+      backgroundColor: "rgba(91,141,239,0.18) !important",
     },
   },
   { dark: true }
@@ -44,6 +45,7 @@ const cmTheme = EditorView.theme(
 
 export function SnippetsTab() {
   const { push } = useToast();
+  const { guard, setDirty } = useNavigationGuard();
   const [snippets, setSnippets] = useState<Snippet[]>([]);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [isNew, setIsNew] = useState(false);
@@ -51,6 +53,7 @@ export function SnippetsTab() {
   const [name, setName] = useState("");
   const [content, setContent] = useState("");
   const [originalContent, setOriginalContent] = useState("");
+  const [originalName, setOriginalName] = useState("");
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [syncOpen, setSyncOpen] = useState(false);
   const [loading, setLoading] = useState(true);
@@ -84,6 +87,7 @@ export function SnippetsTab() {
     setName(s.name);
     setContent(s.content);
     setOriginalContent(s.content);
+    setOriginalName(s.name);
   };
 
   const newSnippet = () => {
@@ -93,9 +97,19 @@ export function SnippetsTab() {
     setName("");
     setContent("");
     setOriginalContent("");
+    setOriginalName("");
   };
 
-  const dirty = content !== originalContent || (isNew && (id !== "" || name !== "" || content !== ""));
+  const dirty =
+    content !== originalContent ||
+    name.trim() !== originalName.trim() ||
+    (isNew && (id !== "" || name !== "" || content !== ""));
+
+  // 上报脏状态给全局守卫
+  useEffect(() => {
+    setDirty("snippets", dirty);
+    return () => setDirty("snippets", false);
+  }, [dirty, setDirty]);
 
   const save = async (): Promise<Snippet | null> => {
     const finalId = id.trim();
@@ -112,6 +126,7 @@ export function SnippetsTab() {
       setId(saved.id);
       setName(saved.name);
       setOriginalContent(saved.content);
+      setOriginalName(saved.name);
       return list.find((s) => s.id === saved.id) ?? saved;
     } catch (e) {
       push(`保存失败: ${String(e)}`, "error");
@@ -123,7 +138,7 @@ export function SnippetsTab() {
     if (!selectedId) return;
     try {
       await api.deleteSnippet(selectedId);
-      push("片段已删除（移入 ~/.skillman/.trash）", "success");
+      push("片段已删除（移入 ~/.skillink/.trash）", "success");
       setConfirmDelete(false);
       newSnippet();
       await loadSnippets();
@@ -146,7 +161,7 @@ export function SnippetsTab() {
   return (
     <div className="snippets-layout">
       <div className="docs-col snippets-list">
-        <button className="btn btn-primary snippet-new-btn" onClick={newSnippet}>
+        <button className="btn btn-primary snippet-new-btn" onClick={() => guard(newSnippet)}>
           <Plus size={14} />
           新建片段
         </button>
@@ -160,7 +175,7 @@ export function SnippetsTab() {
           <button
             key={s.id}
             className={`snippet-item ${selectedId === s.id && !isNew ? "active" : ""}`}
-            onClick={() => openSnippet(s)}
+            onClick={() => guard(() => openSnippet(s))}
           >
             <Scissors size={13} />
             <div className="snippet-item-info">
@@ -222,7 +237,7 @@ export function SnippetsTab() {
             </div>
 
             <div className="editor-meta">
-              保存位置 ~/.skillman/snippets/{id || "…"}.md · 分发目标为各 Agent 的「指令」类文档
+              保存位置 ~/.skillink/snippets/{id || "…"}.md · 分发目标为各 Agent 的「指令」类文档
             </div>
 
             <div className="editor-area">
@@ -243,7 +258,7 @@ export function SnippetsTab() {
         title="删除共享片段"
         message={
           <>
-            片段文件将移入 ~/.skillman/.trash（不会永久删除）。
+            片段文件将移入 ~/.skillink/.trash（不会永久删除）。
             <br />
             注意：已分发到各 Agent 文档中的同步块不会自动移除，如需移除请使用「分发」中的移除模式。
           </>
